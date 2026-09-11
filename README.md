@@ -1,0 +1,346 @@
+<div align="center">
+
+English | [한국어](./README.ko.md)
+
+<img src="./assets/spacedock-icon.svg" alt="SpaceDock logo" width="128" />
+
+# SpaceDock
+
+</div>
+
+SpaceDock is a **self-hosted MCP development runtime** for controlling remote development servers from ChatGPT. It combines DevSpace-style Allowed Root/Workspace boundaries with structured Go-native development tools, and includes remote OAuth, persistent systemd operation, managed Git worktrees, real ACP prompt/turn handling, and bounded subagents from the initial release.
+
+Subagents are not forced through a single protocol:
+
+- **Codex** uses the installed `codex` CLI directly through its `app-server`. No `codex-acp` adapter is required.
+- **GitHub Copilot** uses the ACP provider, typically by launching `copilot --acp`.
+
+## Install
+
+End users do not need Go. Node.js 18+ and npm are enough to install the prebuilt Go binary.
+
+```sh
+npm install -g @starlove7/spacedock
+spacedock version
+```
+
+Supported targets are Linux, macOS, and Windows on x64/amd64 and arm64.
+
+## Quick start for remote ChatGPT use
+
+For example, to allow projects below `/home/ubuntu/github` on an OCI host:
+
+```sh
+spacedock init \
+  --root /home/ubuntu/github \
+  --root-id github \
+  --root-name "GitHub Projects" \
+  --public-base-url https://spacedock.example.com
+```
+
+The default config is `~/.spacedock/config.yaml`; the owner approval token is `~/.spacedock/oauth-owner.token`. The token contents are never printed by `init`.
+
+Then configure agent providers/profiles in `config.yaml`. See `config.example.yaml` for a complete example.
+
+## Codex CLI provider
+
+Codex uses the **Codex CLI itself**, not an ACP adapter.
+
+```yaml
+agents:
+  max_concurrent: 4
+  codex:
+    command: codex
+  profiles:
+    - id: lexus
+      name: Lexus
+      description: Codex worker that implements an approved patch specification
+      provider: codex
+      instructions: Implement only the supplied patch specification.
+      model: gpt-5.6-luna
+      effort: medium
+      write_mode: allowed
+```
+
+SpaceDock creates a Codex provider session with this lifecycle:
+
+```text
+codex app-server
+    ↓
+initialize / initialized
+    ↓
+first turn: thread/start
+later turn: thread/resume
+    ↓
+turn/start
+    ↓
+turn/completed
+```
+
+`agent_continue` reuses the same Codex thread ID through `thread/resume`, preserving provider conversation context. Profile `instructions` are prepended only to the first `agent_run`; they are not re-applied on `agent_continue`.
+
+`write_mode` maps to the Codex sandbox:
+
+```text
+read_only   -> read-only / readOnly
+allowed     -> workspace-write / workspaceWrite(networkAccess=true)
+full_access -> danger-full-access / dangerFullAccess
+```
+
+SpaceDock uses `approvalPolicy=never` for Codex worker turns so a non-interactive subagent cannot stall waiting for an approval prompt. Choose the Workspace permissions and `write_mode` up front according to the worker's required authority.
+
+`agents.codex.command` defaults to `codex` and is resolved from `PATH`. A systemd user service may have a different PATH from your login shell. If Codex was installed through nvm or another shell-specific environment, an absolute path is safer:
+
+```yaml
+agents:
+  codex:
+    command: /home/ubuntu/.nvm/versions/node/v22.23.2/bin/codex
+```
+
+## Copilot ACP provider
+
+GitHub Copilot is connected through ACP. ACP endpoint `command` must be an **absolute executable path**.
+
+```yaml
+agents:
+  profiles:
+    - id: audi
+      name: Audi
+      description: Copilot ACP worker
+      provider: acp
+      endpoint_id: copilot
+      instructions: Implement only the supplied patch specification.
+      permission_policy: manual
+      config_options: {}
+
+acp:
+  endpoints:
+    - id: copilot
+      name: GitHub Copilot ACP
+      command: /absolute/path/to/copilot
+      args: [--acp]
+      env_from: {}
+```
+
+Even if `copilot` is available in your interactive PATH, ACP endpoints intentionally use explicit absolute paths. Use `which copilot` (or the platform equivalent) to locate the executable.
+
+For `provider: acp`, use `endpoint_id`, `permission_policy`, `mode_id`, and `config_options`. `model`, `effort`, and `write_mode` are Codex-provider fields.
+
+## Persistent systemd operation
+
+The primary Linux deployment is a user systemd service.
+
+```sh
+spacedock service install
+spacedock service status
+```
+
+Other service commands:
+
+```sh
+spacedock service start
+spacedock service stop
+spacedock service restart
+spacedock service status
+spacedock service uninstall
+```
+
+`service install` writes `~/.config/systemd/user/spacedock.service` using the current SpaceDock executable and an absolute config path, then runs `systemctl --user enable --now spacedock.service`.
+
+The SpaceDock HTTP listener is intentionally loopback-only (`127.0.0.1`, `::1`, or `localhost`). A user-managed HTTPS reverse proxy or tunnel must forward the public address to `127.0.0.1:8766`.
+
+```text
+ChatGPT
+   │ HTTPS + OAuth MCP
+   ▼
+Reverse Proxy / Tunnel
+   │
+   ▼
+127.0.0.1:8766
+   │
+   ▼
+spacedock serve (systemd --user)
+```
+
+SpaceDock does not configure Cloudflare Tunnel/ngrok, tunnel credentials, `sudo`, or `loginctl enable-linger`. If the user service must remain active after logout, enabling linger is an operator-managed step.
+
+## ChatGPT OAuth connection
+
+Register this MCP URL in ChatGPT:
+
+```text
+https://spacedock.example.com/mcp
+```
+
+Remote HTTP MCP uses OAuth access tokens, not a static bearer token. SpaceDock provides:
+
+- Protected Resource Metadata
+- Authorization Server Metadata
+- Dynamic Client Registration compatibility
+- Authorization Code + PKCE S256
+- owner-token approval page
+- access and refresh tokens
+- refresh-token rotation
+- scope/resource validation
+- RFC 9207 authorization-response `iss`
+
+When the authorization page appears, enter the contents of `~/.spacedock/oauth-owner.token`. This value is an **owner approval secret**, not the client's OAuth access token.
+
+Enable `trust_proxy: true` only behind a trusted reverse proxy that sets `X-Forwarded-For` correctly; it affects the client IP used for OAuth rate limiting.
+
+## Allowed Roots and Workspaces
+
+An Allowed Root is an **authorization boundary**, not one project. For example:
+
+```yaml
+allowed_roots:
+  - id: github
+    name: GitHub Projects
+    path: /home/ubuntu/github
+    permissions:
+      - fs.read
+      - fs.write
+      - command.execute
+      - git.read
+      - workspace.manage
+      - recall.read
+      - recall.write
+      - acp.connect
+      - agent.execute
+```
+
+Typical ChatGPT flow:
+
+```text
+workspace_list
+    ↓
+workspace_open(root_id="github", path="spacedock", mode="checkout")
+    ↓
+ws_... workspace ID
+    ↓
+workspace-scoped tools
+```
+
+`path` is relative to the Allowed Root. Absolute paths, `..` escapes, URI/UNC/volume paths, and symlink escapes are rejected.
+
+### checkout
+
+Use the existing checkout directly:
+
+```text
+workspace_open(root_id="github", path="spacedock", mode="checkout")
+```
+
+### worktree
+
+For isolated agent work, open a managed Git worktree:
+
+```text
+workspace_open(
+  root_id="github",
+  path="spacedock",
+  mode="worktree",
+  base_ref="HEAD"
+)
+```
+
+Managed worktrees are detached and created below `<state_dir>/worktrees/<workspace-id>`. SpaceDock does not silently widen the boundary to a parent Git repository.
+
+A dirty managed worktree is not removed by normal `workspace_close`; SpaceDock returns `WORKTREE_DIRTY`. Use `workspace_discard(force=true)` only when you intentionally want to discard it.
+
+Workspace and managed-worktree metadata are persisted in `workspaces.json` and restored after a SpaceDock/systemd restart. Codex app-server processes, ACP processes, and agent execution sessions are process-local and are not restored.
+
+## Generic ACP tools
+
+ACP endpoints can also be used directly, independently of Copilot subagent profiles:
+
+```text
+acp_list
+acp_connect
+acp_capabilities
+acp_prompt
+acp_events
+acp_cancel
+acp_interactions
+acp_respond
+acp_disconnect
+```
+
+`acp_connect` performs a real `session/new` after initialization. `acp_prompt` runs `session/prompt` on the same remote session and collects `session/update` notifications into a bounded event ring. Exact `agent_thought_chunk` events are filtered before storage/exposure.
+
+`permission_policy` is `manual` or `allow_once`. In manual mode, permission requests are exposed through `acp_interactions` and answered through `acp_respond`; permanent/`always` options are not automatically exposed or selected.
+
+## Agent tools
+
+The high-level Agent API is provider-agnostic:
+
+```text
+agent_list
+agent_run
+agent_show
+agent_continue
+agent_stop
+```
+
+- `agent_run` resolves the profile and starts either a Codex CLI or ACP provider turn.
+- `agent_show` returns a generic run state and final response regardless of provider.
+- `agent_continue` reuses the same provider session: same Codex thread or same ACP remote session.
+- `agent_stop` cancels the running turn and closes the provider session.
+- `agents.max_concurrent` limits simultaneously running **turns**, not total agent processes.
+
+Agent records include `provider` and `provider_session_id`. For Codex, `provider_session_id` is the Codex thread ID. For ACP providers it is SpaceDock's local ACP session ID.
+
+## Tool groups
+
+SpaceDock exposes structured MCP tools instead of putting every operation behind one shell tool.
+
+```text
+Workspace: workspace_list, workspace_open, workspace_close, workspace_discard
+Files:     read_file, list_dir, list_files, search_text, file_edit
+Command:   exec_command, session_observe, session_act
+Git:       git_status, git_diff, git_log
+Recall:    recall_search, recall_read, recall_write, recall_delete
+ACP:       acp_list, acp_connect, acp_capabilities, acp_prompt, acp_events,
+           acp_cancel, acp_interactions, acp_respond, acp_disconnect
+Agent:     agent_list, agent_run, agent_show, agent_continue, agent_stop
+```
+
+File/Git paths and command working directories are scoped to an opened Workspace.
+
+## Security boundaries
+
+`fs.*` operations and the Workspace path resolver enforce Allowed Root containment. `command.execute`, however, is **not an OS sandbox**. Spawned subprocesses have the authority of the local OS user that runs SpaceDock.
+
+Codex `write_mode` is an additional Codex-provider execution policy; it does not replace SpaceDock's Allowed Root/permission model. ACP permission requests are also a separate layer from SpaceDock's `agent.execute`/`acp.connect` permissions.
+
+Recommended practices:
+
+- register only trusted development directories as Allowed Roots
+- omit `command.execute`, `fs.write`, and `agent.execute` where they are not needed
+- use the minimum necessary Codex `write_mode`
+- keep the SpaceDock HTTP listener on loopback
+- expose it externally only through HTTPS reverse proxy/tunnel infrastructure
+- protect the owner token and OAuth state directory
+- enable `trust_proxy` only behind a trusted proxy
+
+## stdio mode
+
+HTTP + OAuth + systemd is the primary remote ChatGPT deployment. `stdio` is an auxiliary transport for local MCP clients.
+
+```sh
+spacedock serve --stdio
+```
+
+HTTP OAuth middleware is not used in stdio mode.
+
+## Build and verify from source
+
+```sh
+go test ./...
+go test -race ./...
+go vet ./...
+go build ./cmd/spacedock
+npm run build:npm-binaries
+```
+
+The Go module path is `github.com/starlove7/spacedock`.

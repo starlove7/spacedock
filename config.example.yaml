@@ -1,0 +1,51 @@
+state_dir: ~/.spacedock
+server:
+  host: 127.0.0.1
+  port: 8766
+  public_base_url: https://example.domain
+  allowed_hosts: [example.domain, localhost, 127.0.0.1, ::1]
+  trust_proxy: true
+  oauth:
+    owner_token_file: ~/.spacedock/oauth-owner.token
+    access_token_ttl_seconds: 3600
+    refresh_token_ttl_seconds: 2592000
+    scopes: [spacedock]
+    allowed_resource_urls: []
+    allowed_redirect_hosts: [chatgpt.com, localhost, 127.0.0.1, ::1]
+worktree:
+  root: ~/.spacedock/worktrees
+agents:
+  max_concurrent: 4
+  codex:
+    # `codex` is resolved from PATH. Under systemd, an absolute path is safer
+    # when the CLI was installed through nvm or another shell-specific PATH.
+    command: codex
+  profiles:
+    - id: lexus
+      name: 렉서스
+      description: 확정된 명세를 구현하는 Codex worker
+      provider: codex
+      instructions: 전달받은 패치 명세만 구현한다.
+      model: gpt-5.6-luna
+      effort: medium
+      write_mode: allowed
+    - id: audi
+      name: 아우디
+      description: Copilot ACP worker
+      provider: acp
+      endpoint_id: copilot
+      instructions: 전달받은 패치 명세만 구현한다.
+      permission_policy: manual
+      config_options: {}
+allowed_roots:
+  - id: github
+    name: GitHub Projects
+    path: /home/ubuntu/github
+    permissions: [fs.read, fs.write, command.execute, git.read, workspace.manage, recall.read, recall.write, acp.connect, agent.execute]
+acp:
+  endpoints:
+    - id: copilot
+      name: GitHub Copilot ACP
+      command: /absolute/path/to/copilot
+      args: [--acp]
+      env_from: {}

@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">SpaceDock icon</title>
+  <desc id="desc">A glowing orbital docking ring around a terminal prompt, representing a secure bridge between ChatGPT and remote development workspaces.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="64" y1="32" x2="448" y2="480" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1830"/>
+      <stop offset="0.55" stop-color="#081321"/>
+      <stop offset="1" stop-color="#050B14"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="128" y1="112" x2="392" y2="404" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5EEBFF"/>
+      <stop offset="0.48" stop-color="#58A6FF"/>
+      <stop offset="1" stop-color="#9A6BFF"/>
+    </linearGradient>
+    <linearGradient id="prompt" x1="190" y1="212" x2="326" y2="304" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F5FDFF"/>
+      <stop offset="1" stop-color="#A9EFFF"/>
+    </linearGradient>
+    <radialGradient id="coreGlow" cx="50%" cy="45%" r="60%">
+      <stop offset="0" stop-color="#1D6A9A" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#07111F" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- App-icon field -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
+  <rect x="17.5" y="17.5" width="477" height="477" rx="110.5" fill="none" stroke="#8ADFFF" stroke-opacity="0.12" stroke-width="3"/>
+
+  <!-- Quiet nebula/core glow -->
+  <circle cx="256" cy="258" r="176" fill="url(#coreGlow)"/>
+
+  <!-- Orbital path: remote connection around the workspace boundary -->
+  <ellipse cx="256" cy="256" rx="194" ry="104" transform="rotate(-24 256 256)" fill="none" stroke="#5EEBFF" stroke-opacity="0.22" stroke-width="6" stroke-linecap="round" stroke-dasharray="3 16"/>
+  <path d="M92 321C141 390 255 417 356 370" fill="none" stroke="url(#ring)" stroke-width="9" stroke-linecap="round" opacity="0.88"/>
+
+  <!-- Space node / star -->
+  <g transform="translate(394 120)" filter="url(#softGlow)">
+    <path d="M0-22L6-6L22 0L6 6L0 22L-6 6L-22 0L-6-6Z" fill="#8FF4FF"/>
+    <circle cx="0" cy="0" r="4.5" fill="#FFFFFF"/>
+  </g>
+
+  <!-- Main docking port -->
+  <circle cx="256" cy="256" r="132" fill="#07111F" stroke="url(#ring)" stroke-width="18"/>
+  <circle cx="256" cy="256" r="104" fill="#0A1828" stroke="#A8EEFF" stroke-opacity="0.18" stroke-width="4"/>
+
+  <!-- Docking clamps: cardinal workspace boundary markers -->
+  <g fill="url(#ring)">
+    <path d="M231 105h50l-7 38h-36z"/>
+    <path d="M231 407h50l-7-38h-36z"/>
+    <path d="M105 231v50l38-7v-36z"/>
+    <path d="M407 231v50l-38-7v-36z"/>
+  </g>
+
+  <!-- Inner connection points -->
+  <g fill="#7FEFFF">
+    <circle cx="256" cy="159" r="6"/>
+    <circle cx="353" cy="256" r="6"/>
+    <circle cx="256" cy="353" r="6"/>
+    <circle cx="159" cy="256" r="6"/>
+  </g>
+
+  <!-- Developer runtime / terminal prompt -->
+  <g fill="none" stroke="url(#prompt)" stroke-width="21" stroke-linecap="round" stroke-linejoin="round" filter="url(#softGlow)">
+    <path d="M198 215l42 41-42 41"/>
+    <path d="M263 299h55"/>
+  </g>
+
+  <!-- Tiny docking lock at the core -->
+  <circle cx="256" cy="256" r="9" fill="#79ECFF" opacity="0.18"/>
+</svg>

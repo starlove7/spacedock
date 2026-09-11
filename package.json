@@ -1,0 +1,30 @@
+{
+  "name": "@starlove7/spacedock",
+  "version": "0.1.0",
+  "description": "SpaceDock Go-native workspace-scoped MCP runtime",
+  "repository": "git+https://github.com/starlove7/spacedock.git",
+  "homepage": "https://github.com/starlove7/spacedock",
+  "bugs": {
+    "url": "https://github.com/starlove7/spacedock/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "spacedock": "npm/bin/spacedock.js"
+  },
+  "files": [
+    "npm/bin/spacedock.js",
+    "npm/dist/",
+    "README.md",
+    "README.ko.md",
+    "config.example.yaml"
+  ],
+  "scripts": {
+    "build:npm-binaries": "node npm/scripts/build-binaries.js",
+    "prepack": "npm run build:npm-binaries"
+  }
+}
