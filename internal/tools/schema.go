@@ -3,7 +3,14 @@ package tools
 import "encoding/json"
 
 func Schema(properties map[string]any, required []string) json.RawMessage {
-	b, _ := json.Marshal(map[string]any{"type": "object", "additionalProperties": false, "properties": properties, "required": required})
+	schema := map[string]any{"type": "object", "additionalProperties": false}
+	if len(properties) > 0 {
+		schema["properties"] = properties
+	}
+	if len(required) > 0 {
+		schema["required"] = required
+	}
+	b, _ := json.Marshal(schema)
 	return b
 }
 

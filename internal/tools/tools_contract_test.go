@@ -38,6 +38,26 @@ func TestAppRegistersAllMCPToolsAndStrictSchemas(t *testing.T) {
 			t.Errorf("%s schema=%s", x.Name(), x.InputSchema())
 		}
 	}
+	workspaceList, ok := a.Tools.Get("workspace_list")
+	if !ok {
+		t.Fatal("missing tool workspace_list")
+	}
+	var workspaceListSchema map[string]any
+	if err := json.Unmarshal(workspaceList.InputSchema(), &workspaceListSchema); err != nil {
+		t.Fatal(err)
+	}
+	if workspaceListSchema["type"] != "object" {
+		t.Errorf("workspace_list schema type=%v, want object", workspaceListSchema["type"])
+	}
+	if workspaceListSchema["additionalProperties"] != false {
+		t.Errorf("workspace_list schema additionalProperties=%v, want false", workspaceListSchema["additionalProperties"])
+	}
+	if _, ok := workspaceListSchema["required"]; ok {
+		t.Errorf("workspace_list schema unexpectedly contains required: %s", workspaceList.InputSchema())
+	}
+	if _, ok := workspaceListSchema["properties"]; ok {
+		t.Errorf("workspace_list schema unexpectedly contains properties: %s", workspaceList.InputSchema())
+	}
 	for _, tc := range []struct {
 		name     string
 		required []string
