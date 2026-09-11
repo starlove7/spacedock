@@ -63,6 +63,45 @@ transport: stdio
 
 사용자 설정을 쓰면 args에 `--config <path>`를 추가합니다. 특정 client의 JSON schema를 전제한 설명은 아닙니다. 로컬 HTTP도 `spacedock serve`로 지원하며 loopback listener의 `/mcp` 경로에 OAuth middleware가 적용됩니다. OAuth를 지원하지 않는 로컬 client에는 stdio를 권장합니다.
 
+### ChatGPT에서 로컬 stdio SpaceDock 연결
+
+ChatGPT는 `https://spacedock.example.com/mcp` 같은 MCP URL을 등록하는 방식으로 로컬 프로세스의 stdio pipe에 직접 연결할 수 없습니다. SpaceDock을 외부에 공개하지 않고 ChatGPT에서 사용하려면 [OpenAI Secure MCP Tunnel](https://github.com/openai/tunnel-client)을 사용합니다. `tunnel-client`가 OpenAI로 outbound 연결을 유지하면서 SpaceDock을 로컬 stdio MCP 자식 프로세스로 실행하므로 SpaceDock 자체에 공개 inbound endpoint가 필요하지 않습니다.
+
+1. [OpenAI Platform Tunnels](https://platform.openai.com/settings/organization/tunnels)에서 tunnel을 생성하거나 선택합니다. ChatGPT에서 사용할 workspace에서 선택할 수 있도록 해당 workspace scope가 연결되어 있어야 합니다.
+2. 지원되는 `tunnel-client`를 설치하고 **Tunnels Read + Use** 권한을 가진 restricted Runtime API key를 만듭니다. 키는 `CONTROL_PLANE_API_KEY` 환경 변수로 전달하고, MCP command에 직접 넣거나 repository에 커밋하지 마십시오.
+3. SpaceDock용 로컬 stdio profile을 만듭니다.
+
+```sh
+export CONTROL_PLANE_API_KEY="sk-..."
+
+tunnel-client init \
+  --sample sample_mcp_stdio_local \
+  --profile spacedock-local \
+  --tunnel-id tunnel_0123456789abcdef0123456789abcdef \
+  --mcp-command "spacedock serve --stdio"
+
+tunnel-client doctor --profile spacedock-local --explain
+tunnel-client run --profile spacedock-local
+```
+
+SpaceDock에서 기본 경로가 아닌 config를 사용한다면 command를 `spacedock serve --stdio --config /absolute/path/to/config.yaml`로 지정합니다. 이 profile을 사용할 때는 별도의 `spacedock serve --stdio` 프로세스를 먼저 실행하지 마십시오. stdio pipe는 `tunnel-client`가 소유하고 SpaceDock 프로세스도 직접 실행합니다.
+
+4. `tunnel-client run --profile spacedock-local`이 정상 실행 중인 상태에서 [ChatGPT connector 설정](https://chatgpt.com/#settings/Connectors)을 열고 **Connection: Tunnel**을 선택한 뒤 동일한 tunnel을 선택하거나 `tunnel_id`를 입력합니다. Connector discovery와 이후 MCP 호출 동안 tunnel runtime은 계속 실행되어 있어야 합니다.
+
+전체 연결 경로는 다음과 같습니다.
+
+```text
+ChatGPT
+  ↕ Secure MCP Tunnel
+OpenAI tunnel control plane
+  ↕ outbound HTTPS
+local tunnel-client
+  ↕ stdio
+spacedock serve --stdio
+```
+
+이는 원격 HTTPS 배포와 다릅니다. `https://spacedock.example.com/mcp`처럼 외부에 공개한 SpaceDock은 URL로 직접 등록하지만, 로컬 stdio SpaceDock은 공개 URL 대신 tunnel object를 통해 ChatGPT에 연결합니다.
+
 로컬 Codex 사용 조건은 실행 환경에 `codex` CLI가 설치되어 있고 PATH에서 사용 가능하며 인증되어 있는 것입니다. `agents.codex.command`에는 PATH 이름이나 실행 파일 경로를 지정할 수 있고 SpaceDock이 Codex app-server를 실행합니다.
 
 ```yaml
@@ -103,7 +142,7 @@ agents:
 
 | 모드 | Transport | OAuth | 용도 |
 | --- | --- | --- | --- |
-| 로컬 stdio | `spacedock serve --stdio` | HTTP OAuth middleware 미사용 | 로컬 MCP client; OAuth 미지원 client에 권장 |
+| 로컬 stdio | `spacedock serve --stdio` | HTTP OAuth middleware 미사용 | 로컬 MCP client는 직접 연결; ChatGPT는 Secure MCP Tunnel 사용 |
 | 로컬 loopback HTTP | `spacedock serve`, `/mcp` | 적용됨 | OAuth를 지원하는 로컬 HTTP client |
 | 원격 HTTPS | HTTPS reverse proxy/tunnel → loopback SpaceDock | 적용됨 | ChatGPT/원격 운영; operator-managed proxy/tunnel 및 보통 systemd |
 

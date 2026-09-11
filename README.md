@@ -63,6 +63,45 @@ transport: stdio
 
 With a custom configuration, add `--config <path>` to the arguments. This describes the transport only and does not assume a particular client's JSON schema. Local HTTP is also supported with `spacedock serve`: it listens on loopback and serves `/mcp`, with the OAuth middleware applied. Prefer stdio for local clients that do not support OAuth.
 
+### Connect local stdio SpaceDock to ChatGPT
+
+ChatGPT cannot attach directly to a local process's stdio pipe by registering an MCP URL such as `https://spacedock.example.com/mcp`. To keep SpaceDock local while using it from ChatGPT, use [OpenAI Secure MCP Tunnel](https://github.com/openai/tunnel-client). `tunnel-client` keeps an outbound connection to OpenAI and launches SpaceDock locally as its stdio MCP child process; SpaceDock itself does not need a public inbound endpoint.
+
+1. Create or select a tunnel in [OpenAI Platform Tunnels](https://platform.openai.com/settings/organization/tunnels). The tunnel must be scoped so it is available to the ChatGPT workspace that will use it.
+2. Install a supported `tunnel-client`, then create a restricted Runtime API key with **Tunnels Read + Use** permission. Keep that key in `CONTROL_PLANE_API_KEY`; do not put the secret directly in the MCP command or commit it to the repository.
+3. Create a local stdio profile for SpaceDock:
+
+```sh
+export CONTROL_PLANE_API_KEY="sk-..."
+
+tunnel-client init \
+  --sample sample_mcp_stdio_local \
+  --profile spacedock-local \
+  --tunnel-id tunnel_0123456789abcdef0123456789abcdef \
+  --mcp-command "spacedock serve --stdio"
+
+tunnel-client doctor --profile spacedock-local --explain
+tunnel-client run --profile spacedock-local
+```
+
+If SpaceDock uses a non-default config, set the command to `spacedock serve --stdio --config /absolute/path/to/config.yaml` instead. Do **not** start a separate `spacedock serve --stdio` process for this profile: `tunnel-client` owns the stdio pipes and starts SpaceDock itself.
+
+4. While `tunnel-client run --profile spacedock-local` is healthy and running, open [ChatGPT connector settings](https://chatgpt.com/#settings/Connectors), choose **Connection: Tunnel**, and select the same tunnel or paste its `tunnel_id`. Keep the tunnel runtime running for connector discovery and later MCP calls.
+
+The resulting path is:
+
+```text
+ChatGPT
+  ↕ Secure MCP Tunnel
+OpenAI tunnel control plane
+  ↕ outbound HTTPS
+local tunnel-client
+  ↕ stdio
+spacedock serve --stdio
+```
+
+This is different from remote HTTPS deployment: a public SpaceDock endpoint such as `https://spacedock.example.com/mcp` is registered as a URL, while local stdio SpaceDock is exposed to ChatGPT through the tunnel object rather than through a public URL.
+
 Local Codex use requires the `codex` CLI to be installed, available in the execution environment, and authenticated there. `agents.codex.command` may be a PATH name or an executable path; SpaceDock launches Codex's app-server. For example:
 
 ```yaml
@@ -103,7 +142,7 @@ The structured filesystem tools always deny built-in sensitive components such a
 
 | Mode | Transport | OAuth | Typical use |
 | --- | --- | --- | --- |
-| Local stdio | `spacedock serve --stdio` | HTTP OAuth middleware not used | Local MCP clients; preferred without OAuth support |
+| Local stdio | `spacedock serve --stdio` | HTTP OAuth middleware not used | Local MCP clients directly; ChatGPT through Secure MCP Tunnel |
 | Local loopback HTTP | `spacedock serve`, `/mcp` | Applied | Local HTTP clients that support OAuth |
 | Remote HTTPS | HTTPS reverse proxy/tunnel → loopback SpaceDock | Applied | ChatGPT/remote operation; operator-managed proxy/tunnel and usually systemd |
 
