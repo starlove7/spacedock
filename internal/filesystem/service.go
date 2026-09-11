@@ -2,6 +2,7 @@ package filesystem
 
 import (
 	"fmt"
+	"github.com/starlove7/spacedock/internal/policy"
 	"github.com/starlove7/spacedock/internal/workspace"
 	"io"
 	"os"
@@ -15,9 +16,17 @@ import (
 	"unicode/utf8"
 )
 
-type Service struct{}
+type Service struct {
+	sensitive *policy.SensitivePathPolicy
+}
 
-func NewService() *Service { return &Service{} }
+func NewService(additionalSensitivePatterns []string) (*Service, error) {
+	p, err := policy.NewSensitivePathPolicy(additionalSensitivePatterns)
+	if err != nil {
+		return nil, err
+	}
+	return &Service{sensitive: p}, nil
+}
 
 type ReadResult struct {
 	Path          string `json:"path"`
@@ -93,15 +102,61 @@ func safePrefix(s string, n int) string {
 	}
 	return string(b)
 }
-func lexical(w *workspace.Workspace, rel string) (string, error) {
+func (s *Service) requested(w *workspace.Workspace, rel string) (string, error) {
 	p, e := w.Resolver.ValidateRelative(rel)
+	if e != nil {
+		return "", e
+	}
+	if s.sensitive.Denied(filepath.ToSlash(p)) {
+		return "", policy.ErrSensitivePath
+	}
+	return p, nil
+}
+
+func relativeRoot(w *workspace.Workspace, p string) string {
+	rel, _ := filepath.Rel(w.Resolver.Root(), p)
+	return filepath.ToSlash(rel)
+}
+
+func (s *Service) existing(w *workspace.Workspace, rel string) (string, error) {
+	p, e := s.requested(w, rel)
+	if e != nil {
+		return "", e
+	}
+	resolved, e := w.Resolver.ResolveExisting(p)
+	if e != nil {
+		return "", e
+	}
+	if s.sensitive.Denied(relativeRoot(w, resolved)) {
+		return "", policy.ErrSensitivePath
+	}
+	return resolved, nil
+}
+
+func (s *Service) forWrite(w *workspace.Workspace, rel string) (string, error) {
+	p, e := s.requested(w, rel)
+	if e != nil {
+		return "", e
+	}
+	resolved, e := w.Resolver.ResolveForWrite(p)
+	if e != nil {
+		return "", e
+	}
+	if s.sensitive.Denied(relativeRoot(w, resolved)) {
+		return "", policy.ErrSensitivePath
+	}
+	return resolved, nil
+}
+
+func (s *Service) lexical(w *workspace.Workspace, rel string) (string, error) {
+	p, e := s.requested(w, rel)
 	if e != nil {
 		return "", e
 	}
 	return filepath.Join(w.Resolver.Root(), p), nil
 }
-func finalSymlink(w *workspace.Workspace, rel string) (bool, error) {
-	p, e := lexical(w, rel)
+func (s *Service) finalSymlink(w *workspace.Workspace, rel string) (bool, error) {
+	p, e := s.lexical(w, rel)
 	if e != nil {
 		return false, e
 	}
@@ -127,7 +182,7 @@ func readRegular(p string, max int64) ([]byte, os.FileInfo, error) {
 }
 
 func (s *Service) ReadFile(w *workspace.Workspace, p string, start, maxLines, maxBytes int) (ReadResult, error) {
-	x, e := w.Resolver.ResolveExisting(p)
+	x, e := s.existing(w, p)
 	if e != nil {
 		return ReadResult{}, e
 	}
@@ -178,7 +233,7 @@ func (s *Service) ListDir(w *workspace.Workspace, p string, max int) (ListResult
 	if p == "" {
 		p = "."
 	}
-	x, e := w.Resolver.ResolveExisting(p)
+	x, e := s.existing(w, p)
 	if e != nil {
 		return ListResult{}, e
 	}
@@ -188,8 +243,19 @@ func (s *Service) ListDir(w *workspace.Workspace, p string, max int) (ListResult
 	}
 	max = clamp(max, 200, 5000)
 	r := ListResult{Path: p}
-	for i, ent := range ents {
-		if i >= max {
+	for _, ent := range ents {
+		rel := relativeRoot(w, filepath.Join(x, ent.Name()))
+		if s.sensitive.Denied(rel) {
+			continue
+		}
+		if ent.Type()&os.ModeSymlink != 0 {
+			if _, e := s.existing(w, rel); e != nil {
+				if e == policy.ErrSensitivePath {
+					continue
+				}
+			}
+		}
+		if len(r.Entries) >= max {
 			r.Truncated = true
 			break
 		}
@@ -200,7 +266,6 @@ func (s *Service) ListDir(w *workspace.Workspace, p string, max int) (ListResult
 		} else if ent.IsDir() {
 			typ = "directory"
 		}
-		rel, _ := filepath.Rel(w.Root, filepath.Join(x, ent.Name()))
 		size := int64(0)
 		mod := time.Time{}
 		if info != nil {
@@ -214,7 +279,7 @@ func (s *Service) ListDir(w *workspace.Workspace, p string, max int) (ListResult
 
 var skippedDirs = map[string]bool{".git": true, ".hg": true, ".svn": true, "node_modules": true, "vendor": true, "dist": true, "build": true, ".cache": true}
 
-func walkFiles(base string, currentDepth, maxDepth int, fn func(string, os.FileInfo) error) error {
+func walkFiles(base string, currentDepth, maxDepth int, skip func(string, os.FileInfo) (bool, error), fn func(string, os.FileInfo) error) error {
 	ents, e := os.ReadDir(base)
 	if e != nil {
 		return e
@@ -233,7 +298,14 @@ func walkFiles(base string, currentDepth, maxDepth int, fn func(string, os.FileI
 			if maxDepth > 0 && currentDepth >= maxDepth {
 				continue
 			}
-			if e = walkFiles(p, currentDepth+1, maxDepth, fn); e != nil {
+			if skip != nil {
+				if ok, se := skip(p, li); se != nil {
+					return se
+				} else if ok {
+					continue
+				}
+			}
+			if e = walkFiles(p, currentDepth+1, maxDepth, skip, fn); e != nil {
 				return e
 			}
 			continue
@@ -259,21 +331,34 @@ func (s *Service) ListFiles(w *workspace.Workspace, p, pat string, depth, max in
 	if pat == "" {
 		pat = "*"
 	}
-	base, e := w.Resolver.ResolveExisting(p)
+	base, e := s.existing(w, p)
 	if e != nil {
 		return ListResult{}, e
 	}
 	depth = clamp(depth, 8, 32)
 	max = clamp(max, 500, 5000)
 	r := ListResult{Path: p}
-	e = walkFiles(base, 0, depth, func(x string, info os.FileInfo) error {
+	e = walkFiles(base, 0, depth, func(x string, _ os.FileInfo) (bool, error) {
+		relToRoot, _ := filepath.Rel(w.Root, x)
+		if s.sensitive.Denied(filepath.ToSlash(relToRoot)) {
+			return true, nil
+		}
+		if _, er := s.existing(w, filepath.ToSlash(relToRoot)); er == policy.ErrSensitivePath {
+			return true, nil
+		}
+		return false, nil
+	}, func(x string, info os.FileInfo) error {
+		relToRoot, _ := filepath.Rel(w.Root, x)
+		if _, er := s.existing(w, filepath.ToSlash(relToRoot)); er == policy.ErrSensitivePath {
+			return nil
+		}
 		rel, _ := filepath.Rel(base, x)
 		if strings.Count(filepath.ToSlash(rel), "/")+1 > depth {
 			return nil
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
 			rp, _ := filepath.Rel(w.Root, x)
-			resolved, e := w.Resolver.ResolveExisting(filepath.ToSlash(rp))
+			resolved, e := s.existing(w, filepath.ToSlash(rp))
 			if e != nil {
 				return nil
 			}
@@ -310,7 +395,7 @@ func (s *Service) SearchText(w *workspace.Workspace, p, q string, rx, cs bool, m
 	if q == "" {
 		return SearchResult{}, fmt.Errorf("query required")
 	}
-	base, e := w.Resolver.ResolveExisting(p)
+	base, e := s.existing(w, p)
 	if e != nil {
 		return SearchResult{}, e
 	}
@@ -327,12 +412,25 @@ func (s *Service) SearchText(w *workspace.Workspace, p, q string, rx, cs bool, m
 	}
 	max = clamp(max, 100, 1000)
 	r := SearchResult{}
-	e = walkFiles(base, 0, 0, func(x string, info os.FileInfo) error {
+	e = walkFiles(base, 0, 0, func(x string, _ os.FileInfo) (bool, error) {
+		relToRoot, _ := filepath.Rel(w.Root, x)
+		if s.sensitive.Denied(filepath.ToSlash(relToRoot)) {
+			return true, nil
+		}
+		if _, er := s.existing(w, filepath.ToSlash(relToRoot)); er == policy.ErrSensitivePath {
+			return true, nil
+		}
+		return false, nil
+	}, func(x string, info os.FileInfo) error {
+		relToRoot, _ := filepath.Rel(w.Root, x)
+		if _, er := s.existing(w, filepath.ToSlash(relToRoot)); er == policy.ErrSensitivePath {
+			return nil
+		}
 		r.FilesScanned++
 		rel, _ := filepath.Rel(w.Root, x)
 		if info.Mode()&os.ModeSymlink != 0 {
 			var er error
-			x, er = w.Resolver.ResolveExisting(filepath.ToSlash(rel))
+			x, er = s.existing(w, filepath.ToSlash(rel))
 			if er != nil {
 				r.FilesSkipped++
 				return nil
@@ -411,14 +509,14 @@ func atomicWrite(path string, data []byte, mode os.FileMode) error {
 func (s *Service) Edit(w *workspace.Workspace, req EditRequest) (EditResult, error) {
 	switch req.Action {
 	case "write":
-		sy, e := finalSymlink(w, req.Path)
+		sy, e := s.finalSymlink(w, req.Path)
 		if e != nil {
 			return EditResult{}, e
 		}
 		if sy {
 			return EditResult{}, fmt.Errorf("final symlink rejected")
 		}
-		p, e := w.Resolver.ResolveForWrite(req.Path)
+		p, e := s.forWrite(w, req.Path)
 		if e != nil {
 			return EditResult{}, e
 		}
@@ -444,14 +542,14 @@ func (s *Service) Edit(w *workspace.Workspace, req EditRequest) (EditResult, err
 		}
 		return EditResult{"write", req.Path, "", true, 0, int64(len(req.Content))}, nil
 	case "replace":
-		sy, e := finalSymlink(w, req.Path)
+		sy, e := s.finalSymlink(w, req.Path)
 		if e != nil {
 			return EditResult{}, e
 		}
 		if sy {
 			return EditResult{}, fmt.Errorf("final symlink rejected")
 		}
-		p, e := w.Resolver.ResolveExisting(req.Path)
+		p, e := s.existing(w, req.Path)
 		if e != nil {
 			return EditResult{}, e
 		}
@@ -477,14 +575,14 @@ func (s *Service) Edit(w *workspace.Workspace, req EditRequest) (EditResult, err
 		}
 		return EditResult{"replace", req.Path, "", out != string(b), n, int64(len(out))}, nil
 	case "delete":
-		sy, e := finalSymlink(w, req.Path)
+		sy, e := s.finalSymlink(w, req.Path)
 		if e != nil {
 			return EditResult{}, e
 		}
 		if sy {
 			return EditResult{}, fmt.Errorf("final symlink rejected")
 		}
-		p, e := w.Resolver.ResolveExisting(req.Path)
+		p, e := s.existing(w, req.Path)
 		if e != nil {
 			return EditResult{}, e
 		}
@@ -500,21 +598,21 @@ func (s *Service) Edit(w *workspace.Workspace, req EditRequest) (EditResult, err
 		if req.NewPath == "" {
 			return EditResult{}, fmt.Errorf("new path required")
 		}
-		sy, e := finalSymlink(w, req.Path)
+		sy, e := s.finalSymlink(w, req.Path)
 		if e != nil {
 			return EditResult{}, e
 		}
 		if sy {
 			return EditResult{}, fmt.Errorf("source symlink rejected")
 		}
-		sy, e = finalSymlink(w, req.NewPath)
+		sy, e = s.finalSymlink(w, req.NewPath)
 		if e != nil {
 			return EditResult{}, e
 		}
 		if sy {
 			return EditResult{}, fmt.Errorf("destination symlink rejected")
 		}
-		src, e := w.Resolver.ResolveExisting(req.Path)
+		src, e := s.existing(w, req.Path)
 		if e != nil {
 			return EditResult{}, e
 		}
@@ -522,7 +620,7 @@ func (s *Service) Edit(w *workspace.Workspace, req EditRequest) (EditResult, err
 		if e != nil || !sst.Mode().IsRegular() {
 			return EditResult{}, fmt.Errorf("source not regular")
 		}
-		dst, e := w.Resolver.ResolveForWrite(req.NewPath)
+		dst, e := s.forWrite(w, req.NewPath)
 		if e != nil {
 			return EditResult{}, e
 		}

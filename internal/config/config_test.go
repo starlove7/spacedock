@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -41,6 +42,63 @@ func TestLoadValidationContracts(t *testing.T) {
 	c.Server.PublicBaseURL = "http://example.com"
 	if err := c.NormalizeAndValidate(); err == nil {
 		t.Error("remote HTTP public base URL accepted")
+	}
+}
+
+func TestSensitivePathConfigContracts(t *testing.T) {
+	root := t.TempDir()
+	d := t.TempDir()
+	token := filepath.Join(d, "token")
+	os.WriteFile(token, []byte(strings.Repeat("t", 24)), 0600)
+
+	plain := filepath.Join(d, "plain.yaml")
+	if err := os.WriteFile(plain, []byte(validYAML(root, token)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(plain); err != nil {
+		t.Fatalf("config without security rejected: %v", err)
+	}
+
+	withPatterns := filepath.Join(d, "patterns.yaml")
+	body := validYAML(root, token) + "security:\n  sensitive_paths:\n    additional_patterns:\n      - \"  *.SECRET  \"\n      - \".npmrc\"\n      - \"*.secret\"\n"
+	if err := os.WriteFile(withPatterns, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(withPatterns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"*.secret", ".npmrc"}
+	if !reflect.DeepEqual(c.Security.SensitivePaths.AdditionalPatterns, want) {
+		t.Fatalf("patterns=%#v, want %#v", c.Security.SensitivePaths.AdditionalPatterns, want)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		pattern string
+	}{
+		{"slash", "nested/*.secret"},
+		{"backslash", `nested\\*.secret`},
+		{"invalid glob", "[bad"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := filepath.Join(d, tc.name+".yaml")
+			body := validYAML(root, token) + "security:\n  sensitive_paths:\n    additional_patterns:\n      - \"" + tc.pattern + "\"\n"
+			if err := os.WriteFile(p, []byte(body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(p); err == nil {
+				t.Errorf("invalid sensitive pattern accepted: %q", tc.pattern)
+			}
+		})
+	}
+
+	disable := filepath.Join(d, "disable.yaml")
+	if err := os.WriteFile(disable, []byte(validYAML(root, token)+"security:\n  sensitive_paths:\n    disable_defaults: true\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(disable); err == nil {
+		t.Error("unsupported disable_defaults field accepted")
 	}
 }
 

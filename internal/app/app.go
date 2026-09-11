@@ -30,7 +30,10 @@ func New(c config.Config) (*App, error) {
 	if e != nil {
 		return nil, e
 	}
-	fs := filesystem.NewService()
+	fs, e := filesystem.NewService(c.Security.SensitivePaths.AdditionalPatterns)
+	if e != nil {
+		return nil, e
+	}
 	cm := command.NewManager()
 	gs := git.NewService()
 	_ = fs

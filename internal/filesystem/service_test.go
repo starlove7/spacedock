@@ -17,9 +17,18 @@ func testWS(t *testing.T) *workspace.Workspace {
 	}
 	return &workspace.Workspace{Root: d, Resolver: r}
 }
+
+func testService(t *testing.T, patterns []string) *Service {
+	t.Helper()
+	s, e := NewService(patterns)
+	if e != nil {
+		t.Fatal(e)
+	}
+	return s
+}
 func TestFilesystemReadListSearchContracts(t *testing.T) {
 	w := testWS(t)
-	s := NewService()
+	s := testService(t, nil)
 	os.Mkdir(filepath.Join(w.Root, "zdir"), 0755)
 	os.WriteFile(filepath.Join(w.Root, "b.txt"), []byte("b\n"), 0644)
 	os.WriteFile(filepath.Join(w.Root, "a.txt"), []byte("a\n"), 0644)
@@ -76,7 +85,7 @@ func TestFilesystemReadListSearchContracts(t *testing.T) {
 
 func TestFilesystemEditContracts(t *testing.T) {
 	w := testWS(t)
-	s := NewService()
+	s := testService(t, nil)
 	p := filepath.Join(w.Root, "f.txt")
 	os.WriteFile(p, []byte("one one"), 0600)
 	zero, e := s.Edit(w, EditRequest{Action: "replace", Path: "f.txt", OldText: "missing", NewText: "x", ExpectedMatches: 0})

@@ -21,6 +21,13 @@ type Config struct {
 	Agents       AgentsConfig   `yaml:"agents"`
 	AllowedRoots []RootConfig   `yaml:"allowed_roots"`
 	ACP          ACPConfig      `yaml:"acp"`
+	Security     SecurityConfig `yaml:"security"`
+}
+type SecurityConfig struct {
+	SensitivePaths SensitivePathsConfig `yaml:"sensitive_paths"`
+}
+type SensitivePathsConfig struct {
+	AdditionalPatterns []string `yaml:"additional_patterns"`
 }
 type ServerConfig struct {
 	Host          string      `yaml:"host"`
@@ -186,6 +193,10 @@ func validateTokenFile(p string) error {
 }
 func (c *Config) NormalizeAndValidate() error {
 	var e error
+	c.Security.SensitivePaths.AdditionalPatterns, e = policy.NormalizeSensitivePathPatterns(c.Security.SensitivePaths.AdditionalPatterns)
+	if e != nil {
+		return e
+	}
 	c.StateDir, e = ExpandHome(c.StateDir)
 	if e != nil {
 		return e

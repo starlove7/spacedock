@@ -26,6 +26,87 @@ spacedock version
 
 Supported targets are Linux, macOS, and Windows on x64/amd64 and arm64.
 
+## Local usage
+
+For a local MCP client, the recommended setup is:
+
+```sh
+npm install -g @starlove7/spacedock
+spacedock init --root /home/you/src --root-id src --root-name "Local source"
+spacedock serve --stdio
+```
+
+`spacedock init` creates the minimal local configuration and a valid owner token file. A manual minimal configuration must still use the parser's structure, for example:
+
+```yaml
+state_dir: ~/.spacedock
+server:
+  oauth:
+    owner_token_file: ~/.spacedock/oauth-owner.token
+allowed_roots:
+  - id: src
+    path: /home/you/src
+    permissions: [fs.read, fs.write, workspace.manage]
+```
+
+This is the minimum permission set for the filesystem tools. Add `command.execute` to the Allowed Root to use `exec_command`, and add `agent.execute` to use agent tools.
+
+`Config.Load` validates `owner_token_file` even for stdio, although stdio does not use the HTTP OAuth middleware. The token file itself must therefore exist and contain a valid token; using `init` is recommended because it creates it.
+
+The transport information guaranteed by SpaceDock for an stdio MCP client is:
+
+```text
+command: spacedock
+args: serve --stdio
+transport: stdio
+```
+
+With a custom configuration, add `--config <path>` to the arguments. This describes the transport only and does not assume a particular client's JSON schema. Local HTTP is also supported with `spacedock serve`: it listens on loopback and serves `/mcp`, with the OAuth middleware applied. Prefer stdio for local clients that do not support OAuth.
+
+Local Codex use requires the `codex` CLI to be installed, available in the execution environment, and authenticated there. `agents.codex.command` may be a PATH name or an executable path; SpaceDock launches Codex's app-server. For example:
+
+```yaml
+agents:
+  codex:
+    command: codex
+  profiles:
+    - id: local-codex
+      provider: codex
+      model: gpt-5.6-luna
+      effort: medium
+      write_mode: allowed
+```
+
+Local Copilot ACP use requires an executable endpoint command. The parser requires an absolute executable path, with `args: [--acp]`; the profile uses `provider: acp` and the endpoint's `endpoint_id`:
+
+```yaml
+acp:
+  endpoints:
+    - id: copilot
+      command: /absolute/path/to/copilot
+      args: [--acp]
+      env_from: {}
+agents:
+  profiles:
+    - id: local-copilot
+      provider: acp
+      endpoint_id: copilot
+```
+
+The local agent flow is `agent_run(workspace_id, profile_id, prompt)` → `agent_show(workspace_id, agent_id[, wait_ms])` →, when needed, `agent_continue(workspace_id, agent_id, prompt)` → `agent_show` again → `agent_stop(workspace_id, agent_id)` when cancellation or shutdown is needed. `agent_continue` reuses the same provider session: the same Codex thread or the same ACP remote session. `agent_stop` cancels the running turn and closes the provider session. Agent tools require the Allowed Root's `agent.execute` permission.
+
+All local modes still apply Allowed Root and Workspace permissions. The structured filesystem tools follow `workspace_list` → `workspace_open` → workspace-scoped `read_file`, `list_dir`, `list_files`, `search_text`, and `file_edit`. For commands, use `exec_command`; when it returns a running session, use `session_observe` to inspect it and `session_act` to interact with it.
+
+Choose `checkout` when you intentionally want to modify the current checkout directly. Choose a managed `worktree` for an isolated detached task; a dirty managed worktree is not closed normally and requires an intentional discard action.
+
+The structured filesystem tools always deny built-in sensitive components such as `.ssh`, `.aws`, `.gnupg`, `.env`/`.env.*`, credentials files, SSH keys and `known_hosts`, and `.pem`, `.key`, `.pfx`, or `.p12` files. `security.sensitive_paths.additional_patterns` adds component globs; the built-in protection cannot be disabled by configuration. Direct access returns `PERMISSION_DENIED`, while broad listings and searches hide sensitive entries and do not count them. This layer applies only to structured filesystem tools. `command.execute` is not an OS sandbox: shell subprocesses run with the SpaceDock process's OS-user permissions, and this sensitive-path layer does not block arbitrary shell commands.
+
+| Mode | Transport | OAuth | Typical use |
+| --- | --- | --- | --- |
+| Local stdio | `spacedock serve --stdio` | HTTP OAuth middleware not used | Local MCP clients; preferred without OAuth support |
+| Local loopback HTTP | `spacedock serve`, `/mcp` | Applied | Local HTTP clients that support OAuth |
+| Remote HTTPS | HTTPS reverse proxy/tunnel → loopback SpaceDock | Applied | ChatGPT/remote operation; operator-managed proxy/tunnel and usually systemd |
+
 ## Quick start for remote ChatGPT use
 
 For example, to allow projects below `/home/ubuntu/github` on an OCI host:
@@ -311,6 +392,8 @@ File/Git paths and command working directories are scoped to an opened Workspace
 
 `fs.*` operations and the Workspace path resolver enforce Allowed Root containment. `command.execute`, however, is **not an OS sandbox**. Spawned subprocesses have the authority of the local OS user that runs SpaceDock.
 
+The sensitive-path deny layer applies only to structured filesystem tools. It always denies `.ssh`, `.aws`, `.gnupg`, `.env` and `.env.*`, credentials and SSH key/`known_hosts` names, and `.pem`, `.key`, `.pfx`, and `.p12` extensions. Additional component globs can be configured under `security.sensitive_paths.additional_patterns`; the built-in list cannot be disabled. Direct access is returned as structured `PERMISSION_DENIED`; broad listing/search omits sensitive entries. This layer does not restrict `command.execute` or arbitrary shell commands.
+
 Codex `write_mode` is an additional Codex-provider execution policy; it does not replace SpaceDock's Allowed Root/permission model. ACP permission requests are also a separate layer from SpaceDock's `agent.execute`/`acp.connect` permissions.
 
 Recommended practices:
@@ -325,13 +408,11 @@ Recommended practices:
 
 ## stdio mode
 
-HTTP + OAuth + systemd is the primary remote ChatGPT deployment. `stdio` is an auxiliary transport for local MCP clients.
+HTTP + OAuth + systemd remains the remote ChatGPT deployment. `stdio` is the local MCP transport; SpaceDock guarantees `command: spacedock`, `args: serve --stdio`, and `transport: stdio` (add `--config <path>` for a custom config). It does not prescribe a client-specific JSON schema, and HTTP OAuth middleware is not used in stdio mode.
 
 ```sh
 spacedock serve --stdio
 ```
-
-HTTP OAuth middleware is not used in stdio mode.
 
 ## Build and verify from source
 

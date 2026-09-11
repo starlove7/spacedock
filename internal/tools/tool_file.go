@@ -3,12 +3,19 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/starlove7/spacedock/internal/filesystem"
 	"github.com/starlove7/spacedock/internal/policy"
 	"github.com/starlove7/spacedock/internal/workspace"
 )
 
 func FileTools(m *workspace.Manager, s *filesystem.Service) []Tool {
+	filesystemError := func(err error) error {
+		if errors.Is(err, policy.ErrSensitivePath) {
+			return SensitivePathDenied()
+		}
+		return err
+	}
 	get := func(id string, p policy.Permission) (*workspace.Workspace, error) {
 		w, e := m.Get(id)
 		if e != nil {
@@ -35,7 +42,8 @@ func FileTools(m *workspace.Manager, s *filesystem.Service) []Tool {
 			if e != nil {
 				return nil, e
 			}
-			return s.ReadFile(w, x.Path, x.StartLine, x.MaxLines, x.MaxBytes)
+			r, e := s.ReadFile(w, x.Path, x.StartLine, x.MaxLines, x.MaxBytes)
+			return r, filesystemError(e)
 		}},
 		&BasicTool{"list_dir", "List directory", Schema(map[string]any{"workspace_id": StringProp(), "path": StringProp(), "max_entries": IntProp(0, 5000)}, []string{"workspace_id"}), func(_ context.Context, b json.RawMessage) (Result, error) {
 			var x struct {
@@ -50,7 +58,8 @@ func FileTools(m *workspace.Manager, s *filesystem.Service) []Tool {
 			if e != nil {
 				return nil, e
 			}
-			return s.ListDir(w, x.Path, x.MaxEntries)
+			r, e := s.ListDir(w, x.Path, x.MaxEntries)
+			return r, filesystemError(e)
 		}},
 		&BasicTool{"list_files", "List files", Schema(map[string]any{"workspace_id": StringProp(), "path": StringProp(), "pattern": StringProp(), "max_depth": IntProp(0, 32), "max_entries": IntProp(0, 5000)}, []string{"workspace_id"}), func(_ context.Context, b json.RawMessage) (Result, error) {
 			var x struct {
@@ -67,7 +76,8 @@ func FileTools(m *workspace.Manager, s *filesystem.Service) []Tool {
 			if e != nil {
 				return nil, e
 			}
-			return s.ListFiles(w, x.Path, x.Pattern, x.MaxDepth, x.MaxEntries)
+			r, e := s.ListFiles(w, x.Path, x.Pattern, x.MaxDepth, x.MaxEntries)
+			return r, filesystemError(e)
 		}},
 		&BasicTool{"search_text", "Search text", Schema(map[string]any{"workspace_id": StringProp(), "path": StringProp(), "query": StringProp(), "regex": BoolProp(), "case_sensitive": BoolProp(), "max_results": IntProp(0, 1000)}, []string{"workspace_id", "query"}), func(_ context.Context, b json.RawMessage) (Result, error) {
 			var x struct {
@@ -85,7 +95,8 @@ func FileTools(m *workspace.Manager, s *filesystem.Service) []Tool {
 			if e != nil {
 				return nil, e
 			}
-			return s.SearchText(w, x.Path, x.Query, x.Regex, x.CaseSensitive, x.MaxResults)
+			r, e := s.SearchText(w, x.Path, x.Query, x.Regex, x.CaseSensitive, x.MaxResults)
+			return r, filesystemError(e)
 		}},
 		&BasicTool{"file_edit", "Edit file", Schema(map[string]any{"workspace_id": StringProp(), "action": map[string]any{"type": "string", "enum": []string{"write", "replace", "delete", "move"}}, "path": StringProp(), "content": StringProp(), "old_text": StringProp(), "new_text": StringProp(), "expected_matches": map[string]any{"type": "integer"}, "replace_all": BoolProp(), "new_path": StringProp(), "overwrite": BoolProp()}, []string{"workspace_id", "action", "path"}), func(_ context.Context, b json.RawMessage) (Result, error) {
 			var x struct {
@@ -111,7 +122,8 @@ func FileTools(m *workspace.Manager, s *filesystem.Service) []Tool {
 			if x.ExpectedMatches != nil {
 				em = *x.ExpectedMatches
 			}
-			return s.Edit(w, filesystem.EditRequest{Action: x.Action, Path: x.Path, Content: x.Content, OldText: x.OldText, NewText: x.NewText, ExpectedMatches: em, ReplaceAll: x.ReplaceAll, NewPath: x.NewPath, Overwrite: x.Overwrite})
+			r, e := s.Edit(w, filesystem.EditRequest{Action: x.Action, Path: x.Path, Content: x.Content, OldText: x.OldText, NewText: x.NewText, ExpectedMatches: em, ReplaceAll: x.ReplaceAll, NewPath: x.NewPath, Overwrite: x.Overwrite})
+			return r, filesystemError(e)
 		}},
 	}
 }

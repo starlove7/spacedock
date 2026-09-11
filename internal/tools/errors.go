@@ -24,6 +24,9 @@ func Validation(err error) error {
 func Denied(p, w string) error {
 	return New("PERMISSION_DENIED", "permission required", "permission", false, map[string]any{"permission": p, "workspace_id": w})
 }
+func SensitivePathDenied() error {
+	return New("PERMISSION_DENIED", "sensitive path access denied", "permission", false, map[string]any{"reason": "sensitive_path"})
+}
 func NotFound(err error) error { return New("NOT_FOUND", safeMessage(err), "not_found", false, nil) }
 func Conflict(err error) error { return New("CONFLICT", safeMessage(err), "conflict", false, nil) }
 func Execution(err error) error {

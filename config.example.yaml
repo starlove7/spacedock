@@ -1,4 +1,9 @@
 state_dir: ~/.spacedock
+security:
+  sensitive_paths:
+    # The built-in deny list is always active. These are additive component globs.
+    # additional_patterns: ["*.secret", "private*"]
+    additional_patterns: []
 server:
   host: 127.0.0.1
   port: 8766
