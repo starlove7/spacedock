@@ -13,13 +13,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: spacedock init|serve|service|version")
+		fmt.Fprintln(os.Stderr, "usage: spacedock init|serve|service|root|version")
 		os.Exit(2)
 	}
 	switch os.Args[1] {
@@ -116,8 +117,129 @@ func main() {
 		if e != nil {
 			log.Fatal(e)
 		}
+	case "root":
+		if len(os.Args) < 3 {
+			log.Fatal("root subcommand required")
+		}
+		switch os.Args[2] {
+		case "add":
+			fs := flag.NewFlagSet("root add", flag.ExitOnError)
+			cp := fs.String("config", "", "config path")
+			rp := fs.String("path", "", "root path")
+			ri := fs.String("id", "", "root id")
+			rn := fs.String("name", "", "root name")
+			_ = fs.Parse(os.Args[3:])
+			if fs.NArg() != 0 {
+				log.Fatal("root add does not accept positional arguments")
+			}
+			if *rp == "" {
+				log.Fatal("root add requires --path")
+			}
+			configPath, e := rootConfigPath(*cp)
+			if e != nil {
+				log.Fatal(e)
+			}
+			r, e := config.AddRoot(config.RootAddOptions{ConfigPath: configPath, Path: *rp, ID: *ri, Name: *rn})
+			if e != nil {
+				log.Fatal(e)
+			}
+			fmt.Printf("added root: id=%s, name=%s, path=%s\n", r.ID, r.Name, r.Path)
+		case "list":
+			fs := flag.NewFlagSet("root list", flag.ExitOnError)
+			cp := fs.String("config", "", "config path")
+			_ = fs.Parse(os.Args[3:])
+			if fs.NArg() != 0 {
+				log.Fatal("root list does not accept positional arguments")
+			}
+			configPath, e := rootConfigPath(*cp)
+			if e != nil {
+				log.Fatal(e)
+			}
+			roots, e := config.ListRoots(configPath)
+			if e != nil {
+				log.Fatal(e)
+			}
+			fmt.Println("ID\tNAME\tPATH\tPERMISSIONS")
+			for _, r := range roots {
+				fmt.Printf("%s\t%s\t%s\t%s\n", r.ID, r.Name, r.Path, strings.Join(r.Permissions, ","))
+			}
+		case "remove":
+			rootID, configPath, e := parseRootRemoveArgs(os.Args[3:])
+			if e != nil {
+				log.Fatal(e)
+			}
+			if e = config.RemoveRoot(config.RootRemoveOptions{ConfigPath: configPath, ID: rootID}); e != nil {
+				log.Fatal(e)
+			}
+			fmt.Printf("removed root: %s\n", rootID)
+		default:
+			log.Fatal("unknown root subcommand")
+		}
 	default:
-		fmt.Fprintln(os.Stderr, "usage: spacedock init|serve|service|version")
+		fmt.Fprintln(os.Stderr, "usage: spacedock init|serve|service|root|version")
 		os.Exit(2)
 	}
+}
+
+func rootConfigPath(path string) (string, error) {
+	if path != "" {
+		return path, nil
+	}
+	return config.DefaultConfigPath()
+}
+
+func parseRootRemoveArgs(args []string) (string, string, error) {
+	var positional []string
+	var flagID, configPath string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--config" || arg == "--id":
+			if i+1 >= len(args) || args[i+1] == "" {
+				return "", "", fmt.Errorf("%s requires a value", arg)
+			}
+			value := args[i+1]
+			i++
+			if arg == "--config" {
+				configPath = value
+			} else {
+				flagID = value
+			}
+		case strings.HasPrefix(arg, "--config="):
+			configPath = strings.TrimPrefix(arg, "--config=")
+			if configPath == "" {
+				return "", "", fmt.Errorf("--config requires a value")
+			}
+		case strings.HasPrefix(arg, "--id="):
+			flagID = strings.TrimPrefix(arg, "--id=")
+			if flagID == "" {
+				return "", "", fmt.Errorf("--id requires a value")
+			}
+		case strings.HasPrefix(arg, "-"):
+			return "", "", fmt.Errorf("unknown flag: %s", arg)
+		default:
+			positional = append(positional, arg)
+		}
+	}
+	if len(positional) > 1 {
+		return "", "", fmt.Errorf("root remove accepts one root id")
+	}
+	if len(positional) == 1 && flagID != "" {
+		return "", "", fmt.Errorf("root id provided both positionally and with --id")
+	}
+	rootID := flagID
+	if len(positional) == 1 {
+		rootID = positional[0]
+	}
+	if rootID == "" {
+		return "", "", fmt.Errorf("root remove requires a root id")
+	}
+	if configPath == "" {
+		var e error
+		configPath, e = rootConfigPath("")
+		if e != nil {
+			return "", "", e
+		}
+	}
+	return rootID, configPath, nil
 }

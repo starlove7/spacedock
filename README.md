@@ -51,6 +51,16 @@ allowed_roots:
 
 This is the minimum permission set for the filesystem tools. Add `command.execute` to the Allowed Root to use `exec_command`, and add `agent.execute` to use agent tools.
 
+After initialization, manage additional Allowed Roots without editing YAML directly:
+
+```sh
+spacedock root add --path /home/you/other-project --id other --name "Other project"
+spacedock root list
+spacedock root remove other
+```
+
+Each command accepts `--config <path>`; when omitted, SpaceDock uses `~/.spacedock/config.yaml`. A root added without an explicit ID or name derives them from the path. `root add` grants the same nine default permissions as `spacedock init`: `fs.read`, `fs.write`, `command.execute`, `git.read`, `workspace.manage`, `recall.read`, `recall.write`, `acp.connect`, and `agent.execute`. Changes are read when the next `serve` process or service restart starts; a running server is not hot-reloaded.
+
 `Config.Load` validates `owner_token_file` even for stdio, although stdio does not use the HTTP OAuth middleware. The token file itself must therefore exist and contain a valid token; using `init` is recommended because it creates it.
 
 The transport information guaranteed by SpaceDock for an stdio MCP client is:

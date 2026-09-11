@@ -7,8 +7,6 @@ import (
 	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strings"
 )
 
 type InitOptions struct {
@@ -57,11 +55,7 @@ func Init(o InitOptions) (InitResult, error) {
 		return InitResult{}, fmt.Errorf("invalid root path")
 	}
 	if o.RootID == "" {
-		b := strings.Trim(regexp.MustCompile(`[^a-z0-9._-]+`).ReplaceAllString(strings.ToLower(filepath.Base(o.RootPath)), "-"), "-")
-		if b == "" {
-			b = "workspace"
-		}
-		o.RootID = b
+		o.RootID = rootIDFromPath(o.RootPath)
 	}
 	if !idRE.MatchString(o.RootID) {
 		return InitResult{}, fmt.Errorf("invalid root id")
@@ -95,7 +89,7 @@ func Init(o InitOptions) (InitResult, error) {
 	if e = validateTokenFile(token); e != nil {
 		return InitResult{}, e
 	}
-	c := Config{StateDir: state, Server: ServerConfig{Host: "127.0.0.1", Port: 8766, PublicBaseURL: o.PublicBaseURL}, Worktree: WorktreeConfig{Root: filepath.Join(state, "worktrees")}, AllowedRoots: []RootConfig{{ID: o.RootID, Name: o.RootName, Path: o.RootPath, Permissions: []string{"fs.read", "fs.write", "command.execute", "git.read", "workspace.manage", "recall.read", "recall.write", "acp.connect", "agent.execute"}}}}
+	c := Config{StateDir: state, Server: ServerConfig{Host: "127.0.0.1", Port: 8766, PublicBaseURL: o.PublicBaseURL}, Worktree: WorktreeConfig{Root: filepath.Join(state, "worktrees")}, AllowedRoots: []RootConfig{{ID: o.RootID, Name: o.RootName, Path: o.RootPath, Permissions: rootPermissions()}}}
 	if e = c.NormalizeAndValidate(); e != nil {
 		return InitResult{}, e
 	}
