@@ -52,8 +52,8 @@ agents:
   codex:
     command: codex
   profiles:
-    - id: lexus
-      name: Lexus
+    - id: codex1
+      name: codex1
       description: Codex worker that implements an approved patch specification
       provider: codex
       instructions: Implement only the supplied patch specification.
@@ -104,8 +104,8 @@ GitHub Copilot is connected through ACP. ACP endpoint `command` must be an **abs
 ```yaml
 agents:
   profiles:
-    - id: audi
-      name: Audi
+    - id: copilot1
+      name: copilot1
       description: Copilot ACP worker
       provider: acp
       endpoint_id: copilot

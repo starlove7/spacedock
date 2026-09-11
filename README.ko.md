@@ -52,8 +52,8 @@ agents:
   codex:
     command: codex
   profiles:
-    - id: lexus
-      name: 렉서스
+    - id: codex1
+      name: 코덱스1호
       description: 확정된 명세를 구현하는 Codex worker
       provider: codex
       instructions: 전달받은 패치 명세만 구현한다.
@@ -104,8 +104,8 @@ GitHub Copilot은 ACP provider로 연결합니다. ACP endpoint `command`는 **�
 ```yaml
 agents:
   profiles:
-    - id: audi
-      name: 아우디
+    - id: copilot1
+      name: 코파일럿1호
       description: Copilot ACP worker
       provider: acp
       endpoint_id: copilot
