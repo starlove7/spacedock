@@ -1,6 +1,6 @@
 {
   "name": "@starlove7/spacedock",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "SpaceDock Go-native workspace-scoped MCP runtime",
   "repository": "git+https://github.com/starlove7/spacedock.git",
   "homepage": "https://github.com/starlove7/spacedock",
