@@ -103,16 +103,20 @@ func NewManager(c config.Config, a *acp.SessionManager) *Manager {
 	}
 }
 
-func (m *Manager) List(workspaceID string) ([]config.AgentProfileConfig, []Record) {
+func (m *Manager) List(w *workspace.Workspace) ([]config.AgentProfileConfig, []Record, error) {
+	profiles, err := resolveProfiles(m.cfg, w.Root)
+	if err != nil {
+		return nil, nil, err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := []Record{}
 	for _, record := range m.items {
-		if record.WorkspaceID == workspaceID {
+		if record.WorkspaceID == w.ID {
 			out = append(out, record)
 		}
 	}
-	return m.cfg.Agents.Profiles, out
+	return profiles, out, nil
 }
 
 func (m *Manager) Run(ctx context.Context, w *workspace.Workspace, profileID, prompt string) (Record, error) {
@@ -120,7 +124,19 @@ func (m *Manager) Run(ctx context.Context, w *workspace.Workspace, profileID, pr
 	if prompt == "" {
 		return Record{}, fmt.Errorf("prompt required")
 	}
-	profile, ok := m.profile(profileID)
+	profiles, err := resolveProfiles(m.cfg, w.Root)
+	if err != nil {
+		return Record{}, err
+	}
+	var profile config.AgentProfileConfig
+	ok := false
+	for _, candidate := range profiles {
+		if candidate.ID == profileID {
+			profile = candidate
+			ok = true
+			break
+		}
+	}
 	if !ok {
 		return Record{}, fmt.Errorf("unknown agent profile")
 	}
@@ -383,15 +399,6 @@ func (m *Manager) acquire() bool {
 	default:
 		return false
 	}
-}
-
-func (m *Manager) profile(id string) (config.AgentProfileConfig, bool) {
-	for _, profile := range m.cfg.Agents.Profiles {
-		if profile.ID == id {
-			return profile, true
-		}
-	}
-	return config.AgentProfileConfig{}, false
 }
 
 func (m *Manager) newProviderSession(ctx context.Context, w *workspace.Workspace, profile config.AgentProfileConfig) (providerSession, error) {

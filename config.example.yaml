@@ -22,26 +22,12 @@ worktree:
 agents:
   max_concurrent: 4
   codex:
+    # Primary profiles are Markdown files in ~/.spacedock/agents/*.md.
+    # Workspace-local profiles live in .spacedock/agents/*.md.
+    # See examples/agents/ for profile examples.
     # `codex` is resolved from PATH. Under systemd, an absolute path is safer
     # when the CLI was installed through nvm or another shell-specific PATH.
     command: codex
-  profiles:
-    - id: lexus
-      name: 렉서스
-      description: 확정된 명세를 구현하는 Codex worker
-      provider: codex
-      instructions: 전달받은 패치 명세만 구현한다.
-      model: gpt-5.6-luna
-      effort: medium
-      write_mode: allowed
-    - id: audi
-      name: 아우디
-      description: Copilot ACP worker
-      provider: acp
-      endpoint_id: copilot
-      instructions: 전달받은 패치 명세만 구현한다.
-      permission_policy: manual
-      config_options: {}
 allowed_roots:
   - id: github
     name: GitHub Projects
@@ -54,3 +40,4 @@ acp:
       command: /absolute/path/to/copilot
       args: [--acp]
       env_from: {}
+  # A Markdown profile selects this endpoint with endpoint_id: copilot.

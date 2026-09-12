@@ -27,10 +27,14 @@ func AgentTools(wm *workspace.Manager, am *agent.Manager) []Tool {
 		if e := Decode(b, &x); e != nil {
 			return nil, Validation(e)
 		}
-		if _, e := auth(x.WorkspaceID); e != nil {
+		w, e := auth(x.WorkspaceID)
+		if e != nil {
 			return nil, e
 		}
-		p, a := am.List(x.WorkspaceID)
+		p, a, e := am.List(w)
+		if e != nil {
+			return nil, e
+		}
 		return map[string]any{"profiles": p, "agents": a}, nil
 	}}, &BasicTool{"agent_run", "Run a bounded worker; host retains final judgment", Schema(map[string]any{"workspace_id": StringProp(), "profile_id": StringProp(), "prompt": StringProp()}, []string{"workspace_id", "profile_id", "prompt"}), func(ctx context.Context, b json.RawMessage) (Result, error) {
 		var x struct {

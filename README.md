@@ -112,21 +112,30 @@ spacedock serve --stdio
 
 This is different from remote HTTPS deployment: a public SpaceDock endpoint such as `https://spacedock.example.com/mcp` is registered as a URL, while local stdio SpaceDock is exposed to ChatGPT through the tunnel object rather than through a public URL.
 
-Local Codex use requires the `codex` CLI to be installed, available in the execution environment, and authenticated there. `agents.codex.command` may be a PATH name or an executable path; SpaceDock launches Codex's app-server. For example:
+Local Codex use requires the `codex` CLI to be installed, available in the execution environment, and authenticated there. `agents.codex.command` may be a PATH name or an executable path; SpaceDock launches Codex's app-server. Runtime configuration remains in `config.yaml`, while the profile is a Markdown file:
 
 ```yaml
 agents:
   codex:
     command: codex
-  profiles:
-    - id: local-codex
-      provider: codex
-      model: gpt-5.6-luna
-      effort: medium
-      write_mode: allowed
 ```
 
-Local Copilot ACP use requires an executable endpoint command. The parser requires an absolute executable path, with `args: [--acp]`; the profile uses `provider: acp` and the endpoint's `endpoint_id`:
+Save the profile as `~/.spacedock/agents/local-codex.md` (or in the workspace-local `.spacedock/agents/` directory):
+
+```markdown
+---
+schema: spacedock-agent/v1
+id: local-codex
+provider: codex
+model: gpt-5.6-luna
+effort: medium
+write_mode: allowed
+---
+
+Implement only the supplied approved patch specification.
+```
+
+Local Copilot ACP use requires an executable endpoint command. The parser requires an absolute executable path, with `args: [--acp]`; runtime endpoint configuration remains in `config.yaml`, and the profile is Markdown:
 
 ```yaml
 acp:
@@ -135,12 +144,30 @@ acp:
       command: /absolute/path/to/copilot
       args: [--acp]
       env_from: {}
-agents:
-  profiles:
-    - id: local-copilot
-      provider: acp
-      endpoint_id: copilot
 ```
+
+Save `~/.spacedock/agents/local-copilot.md`:
+
+```markdown
+---
+schema: spacedock-agent/v1
+id: local-copilot
+provider: acp
+endpoint_id: copilot
+permission_policy: manual
+config_options: {}
+---
+
+Follow the supplied task scope and report blockers.
+```
+
+### Agent profiles
+
+Primary agent profiles are Markdown files with YAML frontmatter and a Markdown body. The required frontmatter is `schema: spacedock-agent/v1`, `id`, and `provider`; optional fields are `name`, `description`, `endpoint_id`, `permission_policy`, `mode_id`, `config_options`, `model`, `effort`, and `write_mode`. The body is the instructions; `instructions` is not a frontmatter field.
+
+SpaceDock reads global profiles from `<state_dir>/agents/*.md` (by default `~/.spacedock/agents/*.md`) and workspace-local profiles from `<workspace-root>/.spacedock/agents/*.md`. A global Markdown profile with the same ID replaces a legacy YAML profile. Local Markdown profiles may add profiles, but cannot shadow any machine-owner ID from the global Markdown or legacy configuration; such collisions are rejected. Missing agent directories are allowed. `spacedock init` creates the global agents directory but no default profile files.
+
+Profiles are reread on every `agent_list` and `agent_run`, so Markdown edits take effect without restarting SpaceDock. Changes to runtime/provider settings in `config.yaml`—including `agents.max_concurrent`, `agents.codex.command`, and `acp.endpoints`—still require a process/service restart. Legacy `agents.profiles` in `config.yaml` is supported only as a compatibility fallback and is not the recommended setup. See `examples/agents/` for examples.
 
 The local agent flow is `agent_run(workspace_id, profile_id, prompt)` → `agent_show(workspace_id, agent_id[, wait_ms])` →, when needed, `agent_continue(workspace_id, agent_id, prompt)` → `agent_show` again → `agent_stop(workspace_id, agent_id)` when cancellation or shutdown is needed. `agent_continue` reuses the same provider session: the same Codex thread or the same ACP remote session. `agent_stop` cancels the running turn and closes the provider session. Agent tools require the Allowed Root's `agent.execute` permission.
 
@@ -170,7 +197,7 @@ spacedock init \
 
 The default config is `~/.spacedock/config.yaml`; the owner approval token is `~/.spacedock/oauth-owner.token`. The token contents are never printed by `init`.
 
-Then configure agent providers/profiles in `config.yaml`. See `config.example.yaml` for a complete example.
+Configure runtime/provider settings in `config.yaml`; define agent profiles as Markdown in `~/.spacedock/agents/*.md` or workspace `.spacedock/agents/*.md`. See `config.example.yaml` and `examples/agents/` for examples.
 
 ## Codex CLI provider
 
@@ -181,16 +208,9 @@ agents:
   max_concurrent: 4
   codex:
     command: codex
-  profiles:
-    - id: codex1
-      name: codex1
-      description: Codex worker that implements an approved patch specification
-      provider: codex
-      instructions: Implement only the supplied patch specification.
-      model: gpt-5.6-luna
-      effort: medium
-      write_mode: allowed
 ```
+
+Create a profile such as `~/.spacedock/agents/codex1.md` with `provider: codex`, optional `model` and `effort`, and `write_mode` (`read_only`, `allowed`, or `full_access`; default `read_only`). Put the worker instructions in the Markdown body. See [codex-implementer](./examples/agents/codex-implementer.md) .
 
 SpaceDock creates a Codex provider session with this lifecycle:
 
@@ -207,7 +227,7 @@ turn/start
 turn/completed
 ```
 
-`agent_continue` reuses the same Codex thread ID through `thread/resume`, preserving provider conversation context. Profile `instructions` are prepended only to the first `agent_run`; they are not re-applied on `agent_continue`.
+`agent_continue` reuses the same Codex thread ID through `thread/resume`, preserving provider conversation context. Profile body instructions are prepended only to the first `agent_run`; they are not re-applied on `agent_continue`.
 
 `write_mode` maps to the Codex sandbox:
 
@@ -232,17 +252,6 @@ agents:
 GitHub Copilot is connected through ACP. ACP endpoint `command` must be an **absolute executable path**.
 
 ```yaml
-agents:
-  profiles:
-    - id: copilot1
-      name: copilot1
-      description: Copilot ACP worker
-      provider: acp
-      endpoint_id: copilot
-      instructions: Implement only the supplied patch specification.
-      permission_policy: manual
-      config_options: {}
-
 acp:
   endpoints:
     - id: copilot
@@ -251,6 +260,8 @@ acp:
       args: [--acp]
       env_from: {}
 ```
+
+Create `~/.spacedock/agents/copilot1.md` with `provider: acp`, required `endpoint_id`, optional `mode_id` and `config_options`, and `permission_policy` (`manual` or `allow_once`, default `manual`). Codex-only fields `model`, `effort`, and `write_mode` are invalid for ACP profiles. See [copilot-worker](./examples/agents/copilot-worker.md).
 
 Even if `copilot` is available in your interactive PATH, ACP endpoints intentionally use explicit absolute paths. Use `which copilot` (or the platform equivalent) to locate the executable.
 
@@ -412,7 +423,7 @@ agent_continue
 agent_stop
 ```
 
-- `agent_run` resolves the profile and starts either a Codex CLI or ACP provider turn.
+- `agent_run` resolves the Markdown (or legacy fallback) profile and starts either a Codex CLI or ACP provider turn.
 - `agent_show` returns a generic run state and final response regardless of provider.
 - `agent_continue` reuses the same provider session: same Codex thread or same ACP remote session.
 - `agent_stop` cancels the running turn and closes the provider session.

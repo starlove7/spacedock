@@ -51,7 +51,7 @@ type WorktreeConfig struct {
 type AgentsConfig struct {
 	MaxConcurrent int                  `yaml:"max_concurrent"`
 	Codex         CodexProviderConfig  `yaml:"codex"`
-	Profiles      []AgentProfileConfig `yaml:"profiles"`
+	Profiles      []AgentProfileConfig `yaml:"profiles,omitempty"`
 }
 type CodexProviderConfig struct {
 	Command string `yaml:"command"`
@@ -191,6 +191,69 @@ func validateTokenFile(p string) error {
 	}
 	return nil
 }
+func NormalizeAgentProfiles(profiles []AgentProfileConfig, endpoints []ACPEndpointConfig) ([]AgentProfileConfig, error) {
+	seen := map[string]bool{}
+	for i := range profiles {
+		p := &profiles[i]
+		if !idRE.MatchString(p.ID) || seen[p.ID] {
+			return nil, fmt.Errorf("invalid or duplicate agent profile id")
+		}
+		seen[p.ID] = true
+		if p.Name == "" {
+			p.Name = p.ID
+		}
+		p.Provider = strings.ToLower(strings.TrimSpace(p.Provider))
+		p.EndpointID = strings.TrimSpace(p.EndpointID)
+		p.Model = strings.TrimSpace(p.Model)
+		p.Effort = strings.TrimSpace(p.Effort)
+		p.WriteMode = strings.ToLower(strings.TrimSpace(p.WriteMode))
+		switch p.Provider {
+		case "codex":
+			if p.EndpointID != "" || p.PermissionPolicy != "" || p.ModeID != "" || len(p.ConfigOptions) != 0 {
+				return nil, fmt.Errorf("codex agent profile contains ACP-only fields")
+			}
+			if p.WriteMode == "" {
+				p.WriteMode = "read_only"
+			}
+			if p.WriteMode != "read_only" && p.WriteMode != "allowed" && p.WriteMode != "full_access" {
+				return nil, fmt.Errorf("invalid codex write mode")
+			}
+		case "acp":
+			if p.EndpointID == "" {
+				return nil, fmt.Errorf("ACP agent profile requires endpoint_id")
+			}
+			if p.Model != "" || p.Effort != "" || p.WriteMode != "" {
+				return nil, fmt.Errorf("ACP agent profile contains Codex-only fields")
+			}
+			if p.PermissionPolicy == "" {
+				p.PermissionPolicy = "manual"
+			}
+			if p.PermissionPolicy != "manual" && p.PermissionPolicy != "allow_once" {
+				return nil, fmt.Errorf("invalid agent permission policy")
+			}
+			found := false
+			for _, ep := range endpoints {
+				if ep.ID == p.EndpointID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return nil, fmt.Errorf("unknown agent endpoint")
+			}
+			for _, v := range p.ConfigOptions {
+				switch v.(type) {
+				case string, bool:
+				default:
+					return nil, fmt.Errorf("agent config options must be string or bool")
+				}
+			}
+		default:
+			return nil, fmt.Errorf("agent profile provider must be codex or acp")
+		}
+	}
+	return profiles, nil
+}
 func (c *Config) NormalizeAndValidate() error {
 	var e error
 	c.Security.SensitivePaths.AdditionalPatterns, e = policy.NormalizeSensitivePathPatterns(c.Security.SensitivePaths.AdditionalPatterns)
@@ -318,67 +381,11 @@ func (c *Config) NormalizeAndValidate() error {
 	if c.Agents.Codex.Command == "" {
 		c.Agents.Codex.Command = "codex"
 	}
-	seen := map[string]bool{}
-	for i := range c.Agents.Profiles {
-		p := &c.Agents.Profiles[i]
-		if !idRE.MatchString(p.ID) || seen[p.ID] {
-			return fmt.Errorf("invalid or duplicate agent profile id")
-		}
-		seen[p.ID] = true
-		if p.Name == "" {
-			p.Name = p.ID
-		}
-		p.Provider = strings.ToLower(strings.TrimSpace(p.Provider))
-		p.EndpointID = strings.TrimSpace(p.EndpointID)
-		p.Model = strings.TrimSpace(p.Model)
-		p.Effort = strings.TrimSpace(p.Effort)
-		p.WriteMode = strings.ToLower(strings.TrimSpace(p.WriteMode))
-		switch p.Provider {
-		case "codex":
-			if p.EndpointID != "" || p.PermissionPolicy != "" || p.ModeID != "" || len(p.ConfigOptions) != 0 {
-				return fmt.Errorf("codex agent profile contains ACP-only fields")
-			}
-			if p.WriteMode == "" {
-				p.WriteMode = "read_only"
-			}
-			if p.WriteMode != "read_only" && p.WriteMode != "allowed" && p.WriteMode != "full_access" {
-				return fmt.Errorf("invalid codex write mode")
-			}
-		case "acp":
-			if p.EndpointID == "" {
-				return fmt.Errorf("ACP agent profile requires endpoint_id")
-			}
-			if p.Model != "" || p.Effort != "" || p.WriteMode != "" {
-				return fmt.Errorf("ACP agent profile contains Codex-only fields")
-			}
-			if p.PermissionPolicy == "" {
-				p.PermissionPolicy = "manual"
-			}
-			if p.PermissionPolicy != "manual" && p.PermissionPolicy != "allow_once" {
-				return fmt.Errorf("invalid agent permission policy")
-			}
-			found := false
-			for _, ep := range c.ACP.Endpoints {
-				if ep.ID == p.EndpointID {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return fmt.Errorf("unknown agent endpoint")
-			}
-			for _, v := range p.ConfigOptions {
-				switch v.(type) {
-				case string, bool:
-				default:
-					return fmt.Errorf("agent config options must be string or bool")
-				}
-			}
-		default:
-			return fmt.Errorf("agent profile provider must be codex or acp")
-		}
+	c.Agents.Profiles, e = NormalizeAgentProfiles(c.Agents.Profiles, c.ACP.Endpoints)
+	if e != nil {
+		return e
 	}
-	seen = map[string]bool{}
+	seen := map[string]bool{}
 	seenPaths := map[string]bool{}
 	for i := range c.AllowedRoots {
 		r := &c.AllowedRoots[i]

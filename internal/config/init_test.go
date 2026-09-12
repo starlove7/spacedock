@@ -36,6 +36,14 @@ func TestInitCreatesSecureFilesAndPreservesToken(t *testing.T) {
 	if !contains(loaded.AllowedRoots[0].Permissions, "agent.execute") {
 		t.Fatalf("init permissions missing agent.execute: %v", loaded.AllowedRoots[0].Permissions)
 	}
+	agentsDir := filepath.Join(filepath.Dir(cp), "agents")
+	if st, err := os.Stat(agentsDir); err != nil || !st.IsDir() || st.Mode().Perm() != 0700 {
+		t.Fatalf("agents directory: stat=%v err=%v", st, err)
+	}
+	sentinel := filepath.Join(agentsDir, "sentinel.md")
+	if err := os.WriteFile(sentinel, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(r.TokenPath, first, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -46,6 +54,9 @@ func TestInitCreatesSecureFilesAndPreservesToken(t *testing.T) {
 	second, _ := os.ReadFile(r2.TokenPath)
 	if string(first) != string(second) {
 		t.Error("force rotated existing token")
+	}
+	if got, err := os.ReadFile(sentinel); err != nil || string(got) != "keep" {
+		t.Fatalf("sentinel changed: %q err=%v", got, err)
 	}
 	badDir := filepath.Join(d, "bad-state")
 	bad := filepath.Join(badDir, "bad.yaml")

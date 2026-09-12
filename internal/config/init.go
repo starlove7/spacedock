@@ -74,6 +74,11 @@ func Init(o InitOptions) (InitResult, error) {
 		return InitResult{}, e
 	}
 	_ = os.Chmod(state, 0700)
+	agents := filepath.Join(state, "agents")
+	if e = os.MkdirAll(agents, 0700); e != nil {
+		return InitResult{}, e
+	}
+	_ = os.Chmod(agents, 0700)
 	token := filepath.Join(state, "oauth-owner.token")
 	if _, e = os.Stat(token); os.IsNotExist(e) {
 		raw := make([]byte, 32)

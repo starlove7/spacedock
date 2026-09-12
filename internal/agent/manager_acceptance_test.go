@@ -164,7 +164,7 @@ func TestACPResponseUTF8TruncationAndWorkspaceClose(t *testing.T) {
 	}
 	_ = waitAgentTerminal(t, ctx, am, w.ID, record.ID)
 	am.CloseWorkspace(w.ID)
-	if _, records := am.List(w.ID); len(records) != 0 {
+	if _, records, err := am.List(w); err != nil || len(records) != 0 {
 		t.Fatalf("CloseWorkspace retained records=%+v", records)
 	}
 	am.CloseAll()

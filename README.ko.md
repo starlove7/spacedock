@@ -307,27 +307,28 @@ SpaceDock은 모든 작업을 하나의 프로토콜로 강제하지 않고, 각
          └── agent_run(profile="copilot1") ──► GitHub Copilot (ACP 프로토콜 구동)
 ```
 
+### Agent 프로필
+
+주요 에이전트 프로필은 YAML frontmatter와 Markdown 본문으로 이루어진 Markdown 파일입니다. 필수 frontmatter는 `schema: spacedock-agent/v1`, `id`, `provider`이며, 선택 필드는 `name`, `description`, `endpoint_id`, `permission_policy`, `mode_id`, `config_options`, `model`, `effort`, `write_mode`입니다. 본문이 지시사항이며 `instructions`는 frontmatter 필드가 아닙니다.
+
+전역 프로필은 `<state_dir>/agents/*.md`에서 읽으며 기본 경로는 `~/.spacedock/agents/*.md`입니다. Workspace 로컬 프로필은 `<workspace-root>/.spacedock/agents/*.md`에 둡니다. 전역 Markdown 프로필이 같은 ID의 legacy YAML 프로필을 대체합니다. 로컬 Markdown은 프로필을 추가할 수 있지만 전역 Markdown 또는 legacy 설정에 있는 machine-owner ID를 가릴 수 없으며, 충돌은 거부됩니다. agents 디렉터리가 없어도 허용되며, `spacedock init`은 전역 agents 디렉터리만 만들고 기본 프로필 파일은 만들지 않습니다.
+
+`agent_list`와 `agent_run`마다 프로필을 다시 읽으므로 Markdown 편집에는 SpaceDock 재시작이 필요하지 않습니다. `config.yaml`의 `agents.max_concurrent`, `agents.codex.command`, `acp.endpoints` 같은 runtime/provider 설정 변경은 기존과 같이 프로세스 또는 service 재시작이 필요합니다. `config.yaml`의 legacy `agents.profiles`는 호환성 fallback으로만 지원하며 권장 설정이 아닙니다. 예시는 `examples/agents/`를 참고하세요.
+
 ### Codex CLI 프로바이더
 
 별도의 어댑터 레이어(`codex-acp` 등)를 거치지 않고, 시스템에 설치된 **Codex CLI의 `app-server` 모드를 SpaceDock이 직접 실행**합니다.
 
-#### 설정 예시 (`config.yaml`)
+#### runtime 설정 예시 (`config.yaml`)
 ```yaml
 agents:
   max_concurrent: 4 # 동시에 실행될 수 있는 최대 에이전트 턴 수
   codex:
     # PATH에 등록된 명령 또는 실행 파일 절대 경로
     command: codex
-  profiles:
-    - id: codex1
-      name: 코덱스1호
-      description: 확정된 명세를 구현하는 Codex 작업자
-      provider: codex
-      instructions: 전달받은 패치 명세만 구현한다.
-      model: gpt-5.6-luna
-      effort: medium
-      write_mode: allowed
 ```
+
+`~/.spacedock/agents/codex1.md`에 `provider: codex` 프로필을 만들고 `model`, `effort`, `write_mode`를 지정합니다. `write_mode`는 `read_only|allowed|full_access`이며 기본값은 `read_only`입니다. 지시사항은 Markdown 본문에 작성하세요. 예시는 [codex-implementer](./examples/agents/codex-implementer.md) 에 있습니다.
 
 #### 동작 특징
 1. **대화 맥락 유지**: `agent_run`으로 시작한 뒤 `agent_continue`를 호출하면, 동일한 Codex thread ID(`thread/resume`)를 재사용하므로 이전 작업 맥락이 온전히 유지됩니다.
@@ -344,19 +345,8 @@ agents:
 
 GitHub Copilot은 Agent Client Protocol(ACP)을 통해 연동합니다.
 
-#### 설정 예시 (`config.yaml`)
+#### runtime 설정 예시 (`config.yaml`)
 ```yaml
-agents:
-  profiles:
-    - id: copilot1
-      name: 코파일럿1호
-      description: Copilot ACP 작업자
-      provider: acp
-      endpoint_id: copilot
-      instructions: 전달받은 패치 명세만 구현한다.
-      permission_policy: manual
-      config_options: {}
-
 acp:
   endpoints:
     - id: copilot
@@ -366,6 +356,8 @@ acp:
       args: [--acp]
       env_from: {}
 ```
+
+`~/.spacedock/agents/copilot1.md`에 `provider: acp`와 필수 `endpoint_id`를 포함한 프로필을 만듭니다. `permission_policy`는 `manual|allow_once`이며 기본값은 `manual`이고, `mode_id`와 `config_options`를 선택할 수 있습니다. `model`, `effort`, `write_mode`는 Codex 전용 필드이므로 ACP 프로필에서는 사용할 수 없습니다. 예시는 [copilot-worker](./examples/agents/copilot-worker.md) 에 있습니다.
 
 #### 동작 특징
 - `acp.endpoints[*].command`는 환경 변수 혼선을 방지하기 위해 **반드시 실행 파일의 절대 경로**여야 합니다 (`which copilot`으로 확인).
