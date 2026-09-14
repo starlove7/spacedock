@@ -360,9 +360,28 @@ acp:
 `~/.spacedock/agents/copilot1.md`에 `provider: acp`와 필수 `endpoint_id`를 포함한 프로필을 만듭니다. `permission_policy`는 `manual|allow_once`이며 기본값은 `manual`이고, `mode_id`와 `config_options`를 선택할 수 있습니다. `model`, `effort`, `write_mode`는 Codex 전용 필드이므로 ACP 프로필에서는 사용할 수 없습니다. 예시는 [copilot-worker](./examples/agents/copilot-worker.md) 에 있습니다.
 
 #### 동작 특징
-- `acp.endpoints[*].command`는 환경 변수 혼선을 방지하기 위해 **반드시 실행 파일의 절대 경로**여야 합니다 (`which copilot`으로 확인).
+- 일반 ACP endpoint의 `acp.endpoints[*].command`는 환경 변수 혼선을 방지하기 위해 **반드시 실행 파일의 절대 경로**여야 합니다 (`which copilot`으로 확인).
 - `permission_policy`는 `manual`(권한 요청 시 수동 승인) 또는 `allow_once`(1회 허용)를 지원합니다.
 - `model`, `effort`, `write_mode` 설정은 Codex 전용 필드이며 ACP 프로필에는 적용되지 않습니다.
+
+---
+
+### Antigravity (ACP) 프로바이더
+
+Antigravity도 SpaceDock의 기존 범용 ACP 세션 흐름을 그대로 사용합니다. DevSpace의 구현과 동일한 실행 파일 탐색 및 플랫폼별 인자 규칙은 `builtin: antigravity`가 담당합니다.
+
+```yaml
+acp:
+  endpoints:
+    - id: antigravity
+      name: Antigravity ACP
+      builtin: antigravity
+      env_from: {}
+```
+
+`builtin: antigravity`를 사용하면 실행 파일은 `command` 명시값 → `ANTIGRAVITY_COMMAND` → `AGY_ACP_COMMAND` → `PATH` 또는 `~/.local/bin`의 `agy_acp_server` 래퍼 → `PATH` 또는 `~/.local/share/agy_acp_server`의 `agy_acp_server.par` 순서로 탐색합니다. Windows에서는 기본 파일명이 `agy_acp_server.exe`입니다. 인증된 설치에서는 래퍼가 필요한 런타임 라이브러리와 identity 인자를 주입할 수 있으므로 `.par` 본체보다 래퍼를 우선합니다. Linux에서 `.par` 본체를 직접 실행하면서 `args`를 생략한 경우에만 `--uid=`를 자동으로 추가하며, `args: []` 또는 별도 인자 목록으로 이를 대체할 수 있습니다. 실제 ACP 프로세스를 시작하기 전에는 찾은 실행 파일 경로를 절대 경로로 정규화합니다.
+
+에이전트 프로필에는 `provider: acp`, `endpoint_id: antigravity`를 지정합니다. 예시는 [antigravity-worker](./examples/agents/antigravity-worker.md) 를 참고하세요. 이후 `acp_*` 도구와 `agent_run`/`agent_continue`는 다른 ACP endpoint와 동일하게 `initialize` → `session/new` → `session/prompt` 흐름을 사용합니다.
 
 ---
 

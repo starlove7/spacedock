@@ -8,8 +8,10 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -82,6 +84,7 @@ type ACPConfig struct {
 type ACPEndpointConfig struct {
 	ID      string            `yaml:"id"`
 	Name    string            `yaml:"name"`
+	Builtin string            `yaml:"builtin,omitempty"`
 	Command string            `yaml:"command"`
 	Args    []string          `yaml:"args"`
 	EnvFrom map[string]string `yaml:"env_from"`
@@ -188,6 +191,106 @@ func validateTokenFile(p string) error {
 	}
 	if len(strings.TrimSpace(string(b))) < 24 {
 		return fmt.Errorf("invalid owner token")
+	}
+	return nil
+}
+
+// executableFile reports whether path can be launched directly on this platform.
+func executableFile(path string) bool {
+	st, err := os.Stat(path)
+	if err != nil || !st.Mode().IsRegular() {
+		return false
+	}
+	return runtime.GOOS == "windows" || st.Mode().Perm()&0111 != 0
+}
+
+// resolveACPExecutable resolves a configured path or PATH command to an absolute executable path.
+func resolveACPExecutable(command string) (string, error) {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return "", fmt.Errorf("ACP command is empty")
+	}
+	if filepath.IsAbs(command) || strings.ContainsAny(command, `/\\`) {
+		candidate := command
+		if !filepath.IsAbs(candidate) {
+			var err error
+			candidate, err = filepath.Abs(filepath.Clean(candidate))
+			if err != nil {
+				return "", err
+			}
+		} else {
+			candidate = filepath.Clean(candidate)
+		}
+		if !executableFile(candidate) {
+			return "", fmt.Errorf("ACP command is not executable file: %s", candidate)
+		}
+		return candidate, nil
+	}
+	candidate, err := exec.LookPath(command)
+	if err != nil {
+		return "", err
+	}
+	candidate, err = filepath.Abs(candidate)
+	if err != nil {
+		return "", err
+	}
+	if !executableFile(candidate) {
+		return "", fmt.Errorf("ACP command is not executable file: %s", candidate)
+	}
+	return filepath.Clean(candidate), nil
+}
+
+// antigravityDefaultCommands returns launch candidates in preference order.
+// The installed wrapper is preferred because it may inject runtime libraries and
+// identity arguments required by the authenticated Antigravity installation.
+func antigravityDefaultCommands() []string {
+	if runtime.GOOS == "windows" {
+		return []string{"agy_acp_server.exe"}
+	}
+	out := []string{"agy_acp_server"}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		out = append(out, filepath.Join(home, ".local", "bin", "agy_acp_server"))
+	}
+	out = append(out, "agy_acp_server.par")
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		out = append(out, filepath.Join(home, ".local", "share", "agy_acp_server", "agy_acp_server.par"))
+	}
+	return out
+}
+
+// normalizeAntigravityEndpoint applies DevSpace-compatible Antigravity ACP launch defaults.
+func normalizeAntigravityEndpoint(ep *ACPEndpointConfig) error {
+	command := strings.TrimSpace(ep.Command)
+	if command == "" {
+		command = strings.TrimSpace(os.Getenv("ANTIGRAVITY_COMMAND"))
+	}
+	if command == "" {
+		command = strings.TrimSpace(os.Getenv("AGY_ACP_COMMAND"))
+	}
+
+	var resolved string
+	var err error
+	if command != "" {
+		resolved, err = resolveACPExecutable(command)
+	} else {
+		for _, candidate := range antigravityDefaultCommands() {
+			resolved, err = resolveACPExecutable(candidate)
+			if err == nil {
+				break
+			}
+		}
+	}
+	if err != nil || resolved == "" {
+		if err == nil {
+			err = fmt.Errorf("no Antigravity executable candidate resolved")
+		}
+		return fmt.Errorf("Antigravity ACP command not found: %w", err)
+	}
+	ep.Command = resolved
+	// The packaged agy_acp_server wrapper supplies its own UID/runtime setup.
+	// Only a direct Linux .par launch needs the DevSpace-compatible empty UID flag.
+	if ep.Args == nil && runtime.GOOS == "linux" && filepath.Base(resolved) == "agy_acp_server.par" {
+		ep.Args = []string{"--uid="}
 	}
 	return nil
 }
@@ -438,12 +541,22 @@ func (c *Config) NormalizeAndValidate() error {
 		if ep.Name == "" {
 			ep.Name = ep.ID
 		}
-		if !filepath.IsAbs(ep.Command) {
-			return fmt.Errorf("ACP command must be absolute")
-		}
-		st, er := os.Stat(ep.Command)
-		if er != nil || !st.Mode().IsRegular() || st.Mode().Perm()&0111 == 0 {
-			return fmt.Errorf("ACP command is not executable file")
+		ep.Builtin = strings.ToLower(strings.TrimSpace(ep.Builtin))
+		ep.Command = strings.TrimSpace(ep.Command)
+		switch ep.Builtin {
+		case "":
+			if !filepath.IsAbs(ep.Command) {
+				return fmt.Errorf("ACP command must be absolute")
+			}
+			if !executableFile(ep.Command) {
+				return fmt.Errorf("ACP command is not executable file")
+			}
+		case "antigravity":
+			if err := normalizeAntigravityEndpoint(ep); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unknown ACP builtin %q", ep.Builtin)
 		}
 		for k, v := range ep.EnvFrom {
 			if !envRE.MatchString(k) || !envRE.MatchString(v) {

@@ -267,6 +267,23 @@ Even if `copilot` is available in your interactive PATH, ACP endpoints intention
 
 For `provider: acp`, use `endpoint_id`, `permission_policy`, `mode_id`, and `config_options`. `model`, `effort`, and `write_mode` are Codex-provider fields.
 
+## Antigravity ACP provider
+
+Antigravity also uses SpaceDock's generic ACP session flow. Configure it with the built-in launcher so SpaceDock applies the same executable discovery and platform arguments as DevSpace:
+
+```yaml
+acp:
+  endpoints:
+    - id: antigravity
+      name: Antigravity ACP
+      builtin: antigravity
+      env_from: {}
+```
+
+For `builtin: antigravity`, SpaceDock resolves the executable in this order: an explicit `command`, `ANTIGRAVITY_COMMAND`, `AGY_ACP_COMMAND`, then the installed `agy_acp_server` wrapper from `PATH` or `~/.local/bin`, and finally `agy_acp_server.par` from `PATH` or `~/.local/share/agy_acp_server` (`agy_acp_server.exe` on Windows). The wrapper is preferred because authenticated installations may use it to inject required runtime libraries and identity arguments. Only a direct Linux `.par` launch adds `--uid=` when `args` is omitted; specify `args: []` to suppress that direct-launch default or provide your own argument list. The resolved executable is normalized to an absolute path before the ACP process starts.
+
+Create an ACP profile with `endpoint_id: antigravity`; see [antigravity-worker](./examples/agents/antigravity-worker.md). The regular ACP tools and high-level `agent_run`/`agent_continue` flow then use the same `initialize` → `session/new` → `session/prompt` lifecycle as other ACP endpoints.
+
 ## Persistent systemd operation
 
 The primary Linux deployment is a user systemd service.

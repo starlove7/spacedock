@@ -40,4 +40,12 @@ acp:
       command: /absolute/path/to/copilot
       args: [--acp]
       env_from: {}
-  # A Markdown profile selects this endpoint with endpoint_id: copilot.
+    - id: antigravity
+      name: Antigravity ACP
+      # Built-in Antigravity launch support resolves ANTIGRAVITY_COMMAND,
+      # then AGY_ACP_COMMAND. Otherwise it prefers the agy_acp_server wrapper
+      # from PATH or ~/.local/bin before falling back to agy_acp_server.par.
+      # A direct Linux .par launch adds --uid= when args is omitted.
+      builtin: antigravity
+      env_from: {}
+  # A Markdown profile selects an endpoint with endpoint_id.
