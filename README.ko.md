@@ -21,7 +21,7 @@ SpaceDock은 ChatGPT 등 대형 언어 모델(LLM)이 개발 서버나 로컬 �
 > - **체계적인 도구 체계**: 단순 쉘 실행에 그치지 않고 안전한 파일 읽기/쓰기/검색, 인터랙티브 터미널 세션, Git 전용 도구를 제공합니다.
 > - **엄격한 디렉터리 격리**: 허가된 디렉터리(Allowed Root) 외의 상위 디렉터리 탈출(`..`, 심볼릭 링크) 및 민감 파일(`.env`, `.ssh`, 인증서 등) 접근을 시스템 차원에서 원천 차단합니다.
 > - **Git Worktree 격리 개발**: 에이전트가 코드를 수정할 때 메인 브랜치를 직접 건드리지 않고, 별도의 격리된 Git worktree에서 안전하게 실험하고 검증할 수 있습니다.
-> - **멀티 서브에이전트 지원**: OpenAI Codex CLI(`app-server`)와 GitHub Copilot(`ACP`)을 필요에 따라 유연하게 작업자(Worker)로 호출하여 백그라운드 작업을 위임합니다.
+> - **멀티 서브에이전트 지원**: OpenAI Codex CLI(`app-server`), GitHub Copilot(`ACP`), Antigravity(`ACP`)를 필요에 따라 유연하게 작업자(Worker)로 호출하여 백그라운드 작업을 위임합니다.
 > - **원격 & 로컬 완벽 지원**: 원격 서버에서는 systemd 상시 구동과 OAuth 보안 인증을, 로컬 환경에서는 OpenAI Secure MCP Tunnel 또는 stdio 파이프 연결을 지원합니다.
 
 ---
@@ -40,11 +40,13 @@ SpaceDock은 ChatGPT 등 대형 언어 모델(LLM)이 개발 서버나 로컬 �
 - [서브에이전트(Subagent) 연동](#서브에이전트subagent-연동)
   - [Codex CLI 프로바이더](#codex-cli-프로바이더)
   - [GitHub Copilot (ACP) 프로바이더](#github-copilot-acp-프로바이더)
+  - [Antigravity (ACP) 프로바이더](#antigravity-acp-프로바이더)
   - [고수준 통합 Agent 도구](#고수준-통합-agent-도구)
   - [저수준 ACP 직접 제어 도구](#저수준-acp-직접-제어-도구)
 - [제공되는 MCP 도구 목록](#제공되는-mcp-도구-목록)
 - [원격 서버 systemd 서비스 관리](#원격-서버-systemd-서비스-관리)
 - [소스 코드에서 빌드 및 테스트](#소스-코드에서-빌드-및-테스트)
+- [참조한 프로젝트](#참조한-프로젝트)
 
 ---
 
@@ -368,7 +370,11 @@ acp:
 
 ### Antigravity (ACP) 프로바이더
 
-Antigravity도 SpaceDock의 기존 범용 ACP 세션 흐름을 그대로 사용합니다. DevSpace의 구현과 동일한 실행 파일 탐색 및 플랫폼별 인자 규칙은 `builtin: antigravity`가 담당합니다.
+Antigravity는 Agent Control Protocol (ACP)을 통해 SpaceDock과 연동됩니다. `builtin: antigravity` 프리셋을 제공하므로, 수동으로 실행 파일의 절대 경로를 찾을 필요 없이 자동으로 환경을 감지하여 간편하게 연결할 수 있습니다.
+
+#### runtime 설정 예시 (`config.yaml`)
+
+대부분의 환경에서는 `builtin: antigravity`만 지정하면 즉시 사용 가능합니다:
 
 ```yaml
 acp:
@@ -379,20 +385,53 @@ acp:
       env_from: {}
 ```
 
-`builtin: antigravity`를 사용하면 실행 파일은 `command` 명시값 → `ANTIGRAVITY_COMMAND` → `AGY_ACP_COMMAND` → `PATH` 또는 `~/.local/bin`의 `agy_acp_server` 래퍼 → `PATH` 또는 `~/.local/share/agy_acp_server`의 `agy_acp_server.par` 순서로 탐색합니다. Windows에서는 기본 파일명이 `agy_acp_server.exe`입니다. 인증된 설치에서는 래퍼가 필요한 런타임 라이브러리와 identity 인자를 주입할 수 있으므로 `.par` 본체보다 래퍼를 우선합니다. Linux에서 `.par` 본체를 직접 실행하면서 `args`를 생략한 경우에만 `--uid=`를 자동으로 추가하며, `args: []` 또는 별도 인자 목록으로 이를 대체할 수 있습니다. 실제 ACP 프로세스를 시작하기 전에는 찾은 실행 파일 경로를 절대 경로로 정규화합니다.
+> **참고**: 특정 경로의 실행 파일을 직접 지정하고 싶다면 일반 ACP 엔드포인트처럼 `command: /path/to/agy_acp_server`를 명시할 수도 있습니다.
 
-에이전트 프로필에는 `provider: acp`, `endpoint_id: antigravity`를 지정합니다. 예시는 [antigravity-worker](./examples/agents/antigravity-worker.md) 를 참고하세요. 이후 `acp_*` 도구와 `agent_run`/`agent_continue`는 다른 ACP endpoint와 동일하게 `initialize` → `session/new` → `session/prompt` 흐름을 사용합니다.
+#### 에이전트 프로필 설정 예시 (`~/.spacedock/agents/antigravity-worker.md`)
+
+`provider: acp`와 `endpoint_id: antigravity`를 지정하여 프로필을 생성합니다. (전체 예시는 [antigravity-worker](./examples/agents/antigravity-worker.md) 참고)
+
+```markdown
+---
+schema: spacedock-agent/v1
+id: antigravity-worker
+name: Antigravity Worker
+description: Executes tasks using Antigravity via ACP.
+provider: acp
+endpoint_id: antigravity
+permission_policy: manual
+config_options: {}
+---
+
+지정된 작업 범위를 정확히 수행하세요. 블로커가 발생하면 임의로 범위를 넓히지 말고 보고하세요.
+```
+
+#### 실행 파일 자동 탐색 순서
+
+`builtin: antigravity`를 사용할 경우, SpaceDock은 다음 우선순위로 실행 파일을 찾아 자동으로 절대 경로로 정규화합니다:
+
+1. **명시적 `command` 설정**: `config.yaml`에 직접 지정한 경로
+2. **환경 변수**: `ANTIGRAVITY_COMMAND` → `AGY_ACP_COMMAND` 순서로 탐색
+3. **`agy_acp_server` 래퍼 스크립트** (권장): `PATH` 또는 `~/.local/bin`
+   - 인증된 설치 환경에 필요한 런타임 라이브러리와 identity 인자를 자동으로 주입해주므로 바이너리 본체보다 우선합니다.
+4. **`agy_acp_server.par` 바이너리 본체**: `PATH` 또는 `~/.local/share/agy_acp_server` (Windows는 `agy_acp_server.exe`)
+
+#### 동작 특징 및 팁
+
+- **자동 절대 경로 정규화**: 일반 ACP 엔드포인트와 달리 `which` 명령 등으로 절대 경로를 일일이 확인하지 않아도 SpaceDock이 자동으로 탐색하고 절대 경로로 정규화하여 실행합니다.
+- **인자(`args`) 자동 구성 규칙**: Linux 환경에서 `.par` 본체를 직접 실행할 때 `args` 설정을 생략하면 환경 호환성을 위해 `--uid=` 인자가 자동으로 추가됩니다. 사용자 정의 인자를 지정하거나 기본 플래그를 비활성화하려면 `args: []` 또는 원하는 인자 목록을 입력하세요.
+- **표준 라이프사이클 지원**: 등록된 프로필은 다른 ACP 엔드포인트와 동일하게 `initialize` → `session/new` → `session/prompt` 흐름을 따르며, 고수준 도구(`agent_run`, `agent_continue` 등)와 저수준 `acp_*` 도구에서 동일한 방식으로 제어할 수 있습니다.
 
 ---
 
 ### 고수준 통합 Agent 도구
 
-서브에이전트가 Codex이든 Copilot이든 관계없이 일관된 인터페이스로 제어할 수 있습니다.
+서브에이전트 프로바이더(Codex, Copilot, Antigravity 등)에 관계없이 일관된 인터페이스로 제어할 수 있습니다.
 
 ```text
-agent_run       → 지정한 프로필(Codex 또는 Copilot)로 에이전트 세션을 만들고 작업 시작
+agent_run       → 지정한 프로필(Codex, Copilot, Antigravity)로 에이전트 세션을 만들고 작업 시작
 agent_show      → 에이전트 실행 상태 확인 및 완료 결과 확인 (wait_ms 대기 지원)
-agent_continue  → 동일한 컨텍스트(Codex 스레드 / Copilot 세션)를 유지하며 추가 작업 지시
+agent_continue  → 동일한 컨텍스트(Codex 스레드 / ACP 세션)를 유지하며 추가 작업 지시
 agent_stop      → 실행 중인 작업을 취소하고 에이전트 세션 종료
 agent_list      → 현재 활성화된 에이전트 목록 조회
 ```
@@ -473,3 +512,12 @@ npm run build:npm-binaries
 ```
 
 - **Go 모듈 경로**: `github.com/starlove7/spacedock`
+
+---
+
+## 참조한 프로젝트
+
+SpaceDock은 다음 오픈소스 프로젝트들로부터 많은 영감과 설계를 참고하여 개발되었습니다:
+
+1. **[DevSpace](https://github.com/Waishnav/devspace)**: Allowed Root 및 Workspace 기반의 개발 환경 격리 경계 모델과 구조화된 개발 도구 체계 설계에 영감을 받았습니다.
+2. **[AgentDock](https://github.com/uvwt/agentdock)**: 에이전트 런타임 제어 및 다중 서브에이전트 세션 관리 구조 설계에 참조되었습니다.

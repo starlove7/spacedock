@@ -14,6 +14,7 @@ Subagents are not forced through a single protocol:
 
 - **Codex** uses the installed `codex` CLI directly through its `app-server`. No `codex-acp` adapter is required.
 - **GitHub Copilot** uses the ACP provider, typically by launching `copilot --acp`.
+- **Antigravity** uses the ACP provider with built-in binary auto-discovery.
 
 ## Install
 
@@ -269,7 +270,11 @@ For `provider: acp`, use `endpoint_id`, `permission_policy`, `mode_id`, and `con
 
 ## Antigravity ACP provider
 
-Antigravity also uses SpaceDock's generic ACP session flow. Configure it with the built-in launcher so SpaceDock applies the same executable discovery and platform arguments as DevSpace:
+Antigravity connects to SpaceDock via the Agent Control Protocol (ACP). With the `builtin: antigravity` preset, SpaceDock automatically discovers and configures the executable, eliminating the need to look up absolute paths manually.
+
+### Runtime configuration (`config.yaml`)
+
+In most cases, specifying `builtin: antigravity` is all that is required:
 
 ```yaml
 acp:
@@ -280,9 +285,42 @@ acp:
       env_from: {}
 ```
 
-For `builtin: antigravity`, SpaceDock resolves the executable in this order: an explicit `command`, `ANTIGRAVITY_COMMAND`, `AGY_ACP_COMMAND`, then the installed `agy_acp_server` wrapper from `PATH` or `~/.local/bin`, and finally `agy_acp_server.par` from `PATH` or `~/.local/share/agy_acp_server` (`agy_acp_server.exe` on Windows). The wrapper is preferred because authenticated installations may use it to inject required runtime libraries and identity arguments. Only a direct Linux `.par` launch adds `--uid=` when `args` is omitted; specify `args: []` to suppress that direct-launch default or provide your own argument list. The resolved executable is normalized to an absolute path before the ACP process starts.
+> **Note**: If you prefer to point to a specific binary path rather than relying on auto-discovery, you can explicitly set `command: /path/to/agy_acp_server` just like standard ACP endpoints.
 
-Create an ACP profile with `endpoint_id: antigravity`; see [antigravity-worker](./examples/agents/antigravity-worker.md). The regular ACP tools and high-level `agent_run`/`agent_continue` flow then use the same `initialize` → `session/new` → `session/prompt` lifecycle as other ACP endpoints.
+### Agent profile (`~/.spacedock/agents/antigravity-worker.md`)
+
+Create an ACP profile with `provider: acp` and `endpoint_id: antigravity` (see [antigravity-worker](./examples/agents/antigravity-worker.md)):
+
+```markdown
+---
+schema: spacedock-agent/v1
+id: antigravity-worker
+name: Antigravity Worker
+description: Executes tasks using Antigravity via ACP.
+provider: acp
+endpoint_id: antigravity
+permission_policy: manual
+config_options: {}
+---
+
+Follow the supplied task scope exactly. Report blockers instead of expanding the task or inventing new requirements.
+```
+
+### Executable resolution order
+
+When using `builtin: antigravity`, SpaceDock searches for the executable in the following priority order, automatically normalizing the resolved binary to an absolute path:
+
+1. **Explicit `command`**: Directly specified in `config.yaml`
+2. **Environment variables**: `ANTIGRAVITY_COMMAND` → `AGY_ACP_COMMAND`
+3. **`agy_acp_server` wrapper** (Recommended): Found in `PATH` or `~/.local/bin`
+   - Preferred because authenticated installations may use it to inject necessary runtime libraries and identity arguments.
+4. **`agy_acp_server.par` binary**: Found in `PATH` or `~/.local/share/agy_acp_server` (`agy_acp_server.exe` on Windows)
+
+### Key behaviors and tips
+
+- **Automatic path normalization**: Unlike manual ACP endpoints that require manual `which` inspection, SpaceDock automatically resolves and normalizes the executable to an absolute path before launch.
+- **Automatic `--uid=` argument on Linux**: When directly launching the `.par` binary on Linux with `args` omitted, `--uid=` is appended automatically for environment compatibility. Specify `args: []` to suppress this default, or provide your own argument list.
+- **Unified lifecycle**: Registered Antigravity agents integrate directly with both high-level Agent tools (`agent_run`, `agent_continue`, `agent_show`) and low-level `acp_*` tools following the standard `initialize` → `session/new` → `session/prompt` workflow.
 
 ## Persistent systemd operation
 
@@ -502,3 +540,10 @@ npm run build:npm-binaries
 ```
 
 The Go module path is `github.com/starlove7/spacedock`.
+
+## References
+
+SpaceDock is inspired by and references ideas from the following open-source projects:
+
+1. **[DevSpace](https://github.com/Waishnav/devspace)**: Inspired the Allowed Root and Workspace boundary model and structured developer tool architecture.
+2. **[AgentDock](https://github.com/uvwt/agentdock)**: Referenced for agent runtime control and multi-subagent session management.
