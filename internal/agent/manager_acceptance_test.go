@@ -38,7 +38,7 @@ func agentFixture(t *testing.T, max int) (*Manager, *workspace.Workspace, *acp.S
 		t.Fatal(err)
 	}
 	acpManager := acp.NewSessionManager(registry)
-	c := config.Config{Agents: config.AgentsConfig{MaxConcurrent: max, Profiles: []config.AgentProfileConfig{{ID: "worker", Name: "Worker", Provider: "acp", EndpointID: "fake", Instructions: "Follow rules", PermissionPolicy: "manual"}}}}
+	c := config.Config{Agents: config.AgentsConfig{MaxConcurrent: max, Profiles: []config.AgentProfileConfig{{ID: "worker", Name: "Worker", Provider: "acp", EndpointID: "fake", Instructions: "Follow rules", PermissionPolicy: "auto"}}}}
 	return NewManager(c, acpManager), &workspace.Workspace{ID: "w", Root: t.TempDir()}, acpManager, logPath
 }
 
@@ -71,6 +71,10 @@ func TestACPAgentRunShowContinueStopOwnershipAndInstructionPrefix(t *testing.T) 
 	}
 	if record.Provider != "acp" || record.ProviderSessionID == "" {
 		t.Fatalf("agent provider record=%+v", record)
+	}
+	snapshot, err := acpManager.Get(w.ID, record.ProviderSessionID)
+	if err != nil || snapshot.PermissionPolicy != "allow_once" {
+		t.Fatalf("agent ACP permission policy=%q err=%v", snapshot.PermissionPolicy, err)
 	}
 	shown := waitAgentTerminal(t, ctx, am, w.ID, record.ID)
 	if shown.Agent.Status != StatusReady || shown.Response != "agent-response" || shown.ResponseTruncated || shown.Run.Status != StatusReady {

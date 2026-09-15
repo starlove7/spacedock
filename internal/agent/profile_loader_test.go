@@ -34,7 +34,7 @@ func TestParseMarkdownProfileCodexAndCRLF(t *testing.T) {
 func TestParseMarkdownProfileACP(t *testing.T) {
 	cfg := config.Config{ACP: config.ACPConfig{Endpoints: []config.ACPEndpointConfig{{ID: "copilot"}}}}
 	p, err := parseMarkdownProfile([]byte("---\nschema: spacedock-agent/v1\nid: copilot\nprovider: acp\nendpoint_id: copilot\n---\nhello"), "test", "p.md", cfg)
-	if err != nil || p.PermissionPolicy != "manual" {
+	if err != nil || p.PermissionPolicy != "auto" {
 		t.Fatalf("profile=%+v err=%v", p, err)
 	}
 }

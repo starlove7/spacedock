@@ -359,11 +359,11 @@ acp:
       env_from: {}
 ```
 
-`~/.spacedock/agents/copilot1.md`에 `provider: acp`와 필수 `endpoint_id`를 포함한 프로필을 만듭니다. `permission_policy`는 `manual|allow_once`이며 기본값은 `manual`이고, `mode_id`와 `config_options`를 선택할 수 있습니다. `model`, `effort`, `write_mode`는 Codex 전용 필드이므로 ACP 프로필에서는 사용할 수 없습니다. 예시는 [copilot-worker](./examples/agents/copilot-worker.md) 에 있습니다.
+`~/.spacedock/agents/copilot1.md`에 `provider: acp`와 필수 `endpoint_id`를 포함한 프로필을 만듭니다. 고수준 Agent 프로필의 `permission_policy`는 `auto|manual|allow_once`이며 기본값은 `auto`입니다. `auto`는 `agent_run` 전용 자동 정책으로, 비대화식 워커가 권한 요청에서 멈추지 않도록 내부 ACP 세션의 1회 승인(`allow_once`)으로 변환됩니다. `mode_id`와 `config_options`를 선택할 수 있으며, `model`, `effort`, `write_mode`는 Codex 전용 필드이므로 ACP 프로필에서는 사용할 수 없습니다. 예시는 [copilot-worker](./examples/agents/copilot-worker.md) 에 있습니다.
 
 #### 동작 특징
 - 일반 ACP endpoint의 `acp.endpoints[*].command`는 환경 변수 혼선을 방지하기 위해 **반드시 실행 파일의 절대 경로**여야 합니다 (`which copilot`으로 확인).
-- `permission_policy`는 `manual`(권한 요청 시 수동 승인) 또는 `allow_once`(1회 허용)를 지원합니다.
+- 고수준 Agent 프로필의 `permission_policy`는 `auto`(기본값), `manual`, `allow_once`를 지원합니다. `auto`는 `agent_run`에서만 ACP의 `allow_once`로 매핑되며 영구(`always`) 권한은 자동 선택하지 않습니다.
 - `model`, `effort`, `write_mode` 설정은 Codex 전용 필드이며 ACP 프로필에는 적용되지 않습니다.
 
 ---
@@ -399,7 +399,7 @@ name: Antigravity Worker
 description: Executes tasks using Antigravity via ACP.
 provider: acp
 endpoint_id: antigravity
-permission_policy: manual
+permission_policy: auto
 config_options: {}
 ---
 
@@ -446,6 +446,8 @@ agent_list      → 현재 활성화된 에이전트 목록 조회
 - `acp_prompt`, `acp_events`, `acp_cancel`: 프롬프트 전송, 이벤트 링 버퍼 조회, 실행 취소
 - `acp_interactions`, `acp_respond`: 권한 요청 등 상호작용 이벤트 확인 및 응답
 - `acp_disconnect`: ACP 세션 연결 종료
+
+저수준 `acp_connect`의 `permission_policy` 계약은 기존과 동일하게 `manual|allow_once`이며 기본값은 `manual`입니다. `auto`는 고수준 `agent_run` 프로필에만 존재하고, 실행 시 1회 승인 정책으로 변환됩니다.
 
 ---
 

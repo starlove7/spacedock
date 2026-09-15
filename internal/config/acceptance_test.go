@@ -79,8 +79,16 @@ func TestConfigPublicURLAndAgentProfileValidation(t *testing.T) {
 	valid := baseConfigForAcceptance(t)
 	valid.ACP.Endpoints = []ACPEndpointConfig{{ID: "ep", Command: endpoint}}
 	valid.Agents.Profiles = []AgentProfileConfig{{ID: "worker", Provider: "acp", EndpointID: "ep", ConfigOptions: map[string]any{"verbose": true}}}
-	if err := valid.NormalizeAndValidate(); err != nil || valid.Agents.Profiles[0].Name != "worker" || valid.Agents.Profiles[0].PermissionPolicy != "manual" {
+	if err := valid.NormalizeAndValidate(); err != nil || valid.Agents.Profiles[0].Name != "worker" || valid.Agents.Profiles[0].PermissionPolicy != "auto" {
 		t.Fatalf("valid ACP profile normalization=%v profile=%+v", err, valid.Agents.Profiles)
+	}
+	for _, permissionPolicy := range []string{"auto", "manual", "allow_once"} {
+		c := baseConfigForAcceptance(t)
+		c.ACP.Endpoints = []ACPEndpointConfig{{ID: "ep", Command: endpoint}}
+		c.Agents.Profiles = []AgentProfileConfig{{ID: "worker", Provider: "acp", EndpointID: "ep", PermissionPolicy: permissionPolicy}}
+		if err := c.NormalizeAndValidate(); err != nil || c.Agents.Profiles[0].PermissionPolicy != permissionPolicy {
+			t.Errorf("ACP permission policy %q normalization=%v profile=%+v", permissionPolicy, err, c.Agents.Profiles)
+		}
 	}
 	for name, mutate := range map[string]func(*Config){
 		"unknown endpoint": func(c *Config) { c.Agents.Profiles[0].EndpointID = "missing" },

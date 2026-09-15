@@ -406,13 +406,22 @@ func (m *Manager) newProviderSession(ctx context.Context, w *workspace.Workspace
 	case "codex":
 		return newCodexProviderSession(ctx, m.cfg.Agents, profile, w)
 	case "acp":
-		snapshot, err := m.acp.Connect(ctx, w, acp.ConnectOptions{EndpointID: profile.EndpointID, ModeID: profile.ModeID, ConfigOptions: profile.ConfigOptions, PermissionPolicy: profile.PermissionPolicy})
+		snapshot, err := m.acp.Connect(ctx, w, acp.ConnectOptions{EndpointID: profile.EndpointID, ModeID: profile.ModeID, ConfigOptions: profile.ConfigOptions, PermissionPolicy: agentACPPermissionPolicy(profile.PermissionPolicy)})
 		if err != nil {
 			return nil, err
 		}
 		return newACPProviderSession(m.acp, w.ID, snapshot), nil
 	default:
 		return nil, fmt.Errorf("unsupported agent provider: %s", profile.Provider)
+	}
+}
+
+func agentACPPermissionPolicy(profilePolicy string) string {
+	switch profilePolicy {
+	case "", "auto":
+		return "allow_once"
+	default:
+		return profilePolicy
 	}
 }
 

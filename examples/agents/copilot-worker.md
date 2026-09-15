@@ -5,7 +5,7 @@ name: Copilot Worker
 description: Executes a supplied task scope through ACP.
 provider: acp
 endpoint_id: copilot
-permission_policy: manual
+permission_policy: auto
 config_options: {}
 ---
 

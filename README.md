@@ -155,7 +155,7 @@ schema: spacedock-agent/v1
 id: local-copilot
 provider: acp
 endpoint_id: copilot
-permission_policy: manual
+permission_policy: auto
 config_options: {}
 ---
 
@@ -262,7 +262,7 @@ acp:
       env_from: {}
 ```
 
-Create `~/.spacedock/agents/copilot1.md` with `provider: acp`, required `endpoint_id`, optional `mode_id` and `config_options`, and `permission_policy` (`manual` or `allow_once`, default `manual`). Codex-only fields `model`, `effort`, and `write_mode` are invalid for ACP profiles. See [copilot-worker](./examples/agents/copilot-worker.md).
+Create `~/.spacedock/agents/copilot1.md` with `provider: acp`, required `endpoint_id`, optional `mode_id` and `config_options`, and `permission_policy` (`auto`, `manual`, or `allow_once`; default `auto`). `auto` is specific to high-level Agent profiles: `agent_run` maps it to ACP `allow_once` so non-interactive workers can approve one-shot tool requests without stalling. Codex-only fields `model`, `effort`, and `write_mode` are invalid for ACP profiles. See [copilot-worker](./examples/agents/copilot-worker.md).
 
 Even if `copilot` is available in your interactive PATH, ACP endpoints intentionally use explicit absolute paths. Use `which copilot` (or the platform equivalent) to locate the executable.
 
@@ -299,7 +299,7 @@ name: Antigravity Worker
 description: Executes tasks using Antigravity via ACP.
 provider: acp
 endpoint_id: antigravity
-permission_policy: manual
+permission_policy: auto
 config_options: {}
 ---
 
@@ -464,7 +464,7 @@ acp_disconnect
 
 `acp_connect` performs a real `session/new` after initialization. `acp_prompt` runs `session/prompt` on the same remote session and collects `session/update` notifications into a bounded event ring. Exact `agent_thought_chunk` events are filtered before storage/exposure.
 
-`permission_policy` is `manual` or `allow_once`. In manual mode, permission requests are exposed through `acp_interactions` and answered through `acp_respond`; permanent/`always` options are not automatically exposed or selected.
+For low-level `acp_connect`, `permission_policy` remains `manual` or `allow_once` and defaults to `manual`. In manual mode, permission requests are exposed through `acp_interactions` and answered through `acp_respond`; permanent/`always` options are not automatically exposed or selected. The high-level Agent profile additionally supports `auto`; `agent_run` translates `auto` to a one-shot `allow_once` ACP session policy and never selects permanent/`always` permission options.
 
 ## Agent tools
 
@@ -478,7 +478,7 @@ agent_continue
 agent_stop
 ```
 
-- `agent_run` resolves the Markdown (or legacy fallback) profile and starts either a Codex CLI or ACP provider turn.
+- `agent_run` resolves the Markdown (or legacy fallback) profile and starts either a Codex CLI or ACP provider turn. ACP Agent profiles default to `permission_policy: auto`, which is mapped internally to one-shot `allow_once` approval for the worker session.
 - `agent_show` returns a generic run state and final response regardless of provider.
 - `agent_continue` reuses the same provider session: same Codex thread or same ACP remote session.
 - `agent_stop` cancels the running turn and closes the provider session.

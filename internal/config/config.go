@@ -309,6 +309,7 @@ func NormalizeAgentProfiles(profiles []AgentProfileConfig, endpoints []ACPEndpoi
 		p.EndpointID = strings.TrimSpace(p.EndpointID)
 		p.Model = strings.TrimSpace(p.Model)
 		p.Effort = strings.TrimSpace(p.Effort)
+		p.PermissionPolicy = strings.ToLower(strings.TrimSpace(p.PermissionPolicy))
 		p.WriteMode = strings.ToLower(strings.TrimSpace(p.WriteMode))
 		switch p.Provider {
 		case "codex":
@@ -329,9 +330,9 @@ func NormalizeAgentProfiles(profiles []AgentProfileConfig, endpoints []ACPEndpoi
 				return nil, fmt.Errorf("ACP agent profile contains Codex-only fields")
 			}
 			if p.PermissionPolicy == "" {
-				p.PermissionPolicy = "manual"
+				p.PermissionPolicy = "auto"
 			}
-			if p.PermissionPolicy != "manual" && p.PermissionPolicy != "allow_once" {
+			if p.PermissionPolicy != "auto" && p.PermissionPolicy != "manual" && p.PermissionPolicy != "allow_once" {
 				return nil, fmt.Errorf("invalid agent permission policy")
 			}
 			found := false
